@@ -1,0 +1,13 @@
+config.json
+config.*.json
+!config.example.json
+__pycache__/
+*.py[cod]
+build/
+dist/
+backups/
+.venv/
+.pytest_cache/
+review_artifacts/
+*.log
+temp_screenshot*
