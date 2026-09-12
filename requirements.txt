@@ -1,0 +1,19 @@
+PySide6>=6.6
+Pillow>=10.0
+pyspellchecker>=0.9,<1
+# RapidOCR (PaddleOCR PP-OCRv4/v5/v6 models on ONNX Runtime) - primary OCR engine
+rapidocr>=3.4
+# onnxruntime 1.29+ 在部分 Windows 机器上 DLL 加载失败，锁定在稳定版本
+onnxruntime==1.20.1
+# 翻译覆盖渲染的文字擦除（inpainting）依赖
+opencv-python>=4.8
+numpy>=1.26
+# Windows 原生 OCR（备用引擎，可选）
+winrt-runtime>=3.0
+winrt-Windows.Foundation>=3.0
+winrt-Windows.Foundation.Collections>=3.0
+winrt-Windows.Globalization>=3.0
+winrt-Windows.Graphics.Imaging>=3.0
+winrt-Windows.Media.Ocr>=3.0
+winrt-Windows.Storage>=3.0
+winrt-Windows.Storage.Streams>=3.0
