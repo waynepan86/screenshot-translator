@@ -20,8 +20,10 @@ def run(output):
         import ocr
         app = QApplication.instance() or QApplication([])
         cfg=type('Config',(),{'get':lambda self,key:DEFAULT_CONFIG.get(key)})()
-        help=HelpDialog(cfg,'1.9.0')
-        assert '本地复核' in help.browser.toPlainText()
+        help=HelpDialog(cfg,'1.9.1')
+        assert '小幅纠偏' in help.browser.toPlainText()
+        from background_repair import smooth_background
+        assert smooth_background(np.full((20,40,3),70,dtype=np.uint8)) is not None
         panel=OCRPanel()
         panel.set_records([dict(original='Hello',source='Hello',translation='你好',status='测试')])
         assert panel.translation.toPlainText() == '你好'

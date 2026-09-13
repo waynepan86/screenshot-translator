@@ -879,7 +879,6 @@ class CaptureWindow(QWidget):
     def group_lines_into_paragraphs(self, lines):
         # Track each column independently: another column's intervening row
         # must not break a paragraph or become its continuation.
-        from ocr_review import protected
         paragraphs = []
         for line in sorted(lines, key=lambda l: (l['y'], l['x'])):
             choices = []
@@ -891,7 +890,7 @@ class CaptureWindow(QWidget):
                 similar_size = max(previous['h'], line['h']) / max(1, min(previous['h'], line['h'])) <= 1.3
                 # Short labels and code rows are separate layout objects.
                 prose = previous['w'] >= height * 5 and len(previous['text']) >= 12
-                if (not new_item and prose and not protected(previous['text']) and not protected(line['text'])
+                if (not new_item and prose
                         and 0 <= gap <= height * .7
                         and abs(previous['x'] - line['x']) <= height * .65
                         and similar_size and self.same_script(previous['text'], line['text'])):
@@ -950,7 +949,7 @@ class CaptureWindow(QWidget):
         self.temp_ocr_path, scale_factor = self.prepare_ocr_image()
         
         # Launch background thread with scale_factor
-        self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=self.config.get("ocr_review"))
+        self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=True)
         self.ocr_thread.progress.connect(self.on_stage_progress)
         self.ocr_thread.finished.connect(self.on_ocr_finished)
         self.ocr_thread.error.connect(self.on_ocr_error)
@@ -1050,7 +1049,7 @@ class CaptureWindow(QWidget):
                     # Prepare the upscaled image for translation OCR
                     self.temp_ocr_path, scale_factor = self.prepare_ocr_image()
                     
-                    self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=self.config.get("ocr_review"))
+                    self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=True)
                     self.ocr_thread.progress.connect(self.on_stage_progress)
                     self.ocr_thread.finished.connect(self.on_ocr_finished_for_translation)
                     self.ocr_thread.error.connect(self.on_translate_error_recovery)
@@ -1115,7 +1114,6 @@ class CaptureWindow(QWidget):
             b['translation'] = result.get('text', '')
             b['restored'] = False
         self.render_blocks()
-        self.display_ocr_panel()
         self.update()
 
     def ensure_blocks(self):
@@ -1169,7 +1167,7 @@ class CaptureWindow(QWidget):
             jobs.append((b, layout))
         # Each block is independent. Never erase a block whose layout failed.
         for b, layout in jobs:
-            regions = [r for l in b['paragraph'] for r in l.get('regions', [l])]
+            regions = b['paragraph']
             erased = self.erase_text_pixels(crop_img, regions)
             if erased is None:
                 b['status'] += '\n背景修复不可用，已保留原图。'
@@ -1253,7 +1251,7 @@ class CaptureWindow(QWidget):
         inks = []
         
         for l in lines:
-            pad = 1
+            pad = max(4, round(l['h'] * .2))
             x0 = max(0, int(l["x"]) - pad)
             y0 = max(0, int(l["y"]) - pad)
             x1 = min(w, int(l["x"] + l["w"]) + pad)
@@ -1300,6 +1298,15 @@ class CaptureWindow(QWidget):
                 inks.append(QColor(int(c[0]), int(c[1]), int(c[2])))
             else:
                 inks.append(None)
+
+            # Smooth screenshot backgrounds can be reconstructed from their
+            # perimeter, including the backing of inline code chips. Only use
+            # this when every edge agrees with the fitted background surface.
+            from background_repair import smooth_background
+            smooth = smooth_background(region)
+            if smooth is not None:
+                region[1:-1, 1:-1] = smooth[1:-1, 1:-1]
+                continue
             
             # Dilate mask to swallow anti-aliased stroke edges
             mask = cv2.dilate(text_px.astype(np.uint8) * 255, kernel, iterations=1) > 0

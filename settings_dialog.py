@@ -186,10 +186,6 @@ class SettingsDialog(QDialog):
         self.chk_startup.setChecked(self.config.get("auto_start"))
         form.addRow("", self.chk_startup)
 
-        self.chk_review = QCheckBox("OCR 本地复核（仅重识别可疑区域）", self)
-        self.chk_review.setChecked(bool(self.config.get("ocr_review")))
-        self.chk_review.setToolTip("检查置信度与英文拼写，局部重识别；不上传截图。待核对文字可在文字面板手动修改。")
-        form.addRow("", self.chk_review)
 
         layout.addLayout(form)
         layout.addWidget(self.build_engine_group())
@@ -346,7 +342,6 @@ class SettingsDialog(QDialog):
         self.config.set("hotkey_fullscreen", full_seq)
         self.config.set("save_dir", self.current_save_dir)
         self.config.set("auto_start", self.chk_startup.isChecked())
-        self.config.set("ocr_review", self.chk_review.isChecked())
         self.config.set("trans_engine", engine)
         self.config.set("trans_api", self.api_values)
 
