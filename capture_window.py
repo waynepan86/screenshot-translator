@@ -1242,12 +1242,16 @@ class CaptureWindow(QWidget):
                 b['status'] += '\n文字与背景无法可靠分离，已保留原图。'
                 continue
             painter = QPainter(crop_img)
-            for region in regions:
-                pad = max(4, round(region['h'] * .2))
+            bounds = dict(x=min(l['x'] for l in regions),y=min(l['y'] for l in regions),
+                          h=sum(l['h'] for l in regions)/len(regions))
+            bounds['w'] = max(l['x']+l['w'] for l in regions)-bounds['x']
+            bounds['bottom'] = max(l['y']+l['h'] for l in regions)
+            for region in [bounds]:
+                pad = max(6, round(region['h'] * .35))
                 x0 = max(0, int(region['x'])-pad)
                 y0 = max(0, int(region['y'])-pad)
                 x1 = min(original.width(),int(region['x']+region['w'])+pad)
-                y1 = min(original.height(),int(region['y']+region['h'])+pad)
+                y1 = min(original.height(),math.ceil(region['bottom'])+pad)
                 rect = QRect(x0,y0,x1-x0,y1-y0)
                 clip = QRegion(rect)
                 for other in self.blocks:
@@ -1336,7 +1340,7 @@ class CaptureWindow(QWidget):
         inks = []
         
         for l in lines:
-            pad = max(4, round(l['h'] * .2))
+            pad = max(6, round(l['h'] * .35))
             x0 = max(0, int(l["x"]) - pad)
             y0 = max(0, int(l["y"]) - pad)
             x1 = min(w, int(l["x"] + l["w"]) + pad)
@@ -1413,6 +1417,30 @@ class CaptureWindow(QWidget):
         
         if inpaint_mask.any():
             arr = cv2.inpaint(arr, inpaint_mask, 5, cv2.INPAINT_NS)
+
+        # Inline chips extend beyond glyph bounds. Reconstruct a whole smooth
+        # paragraph from clean outer edges, rather than sampling chip backing
+        # as the background of each isolated text row.
+        if len(lines) > 1:
+            pad = max(6, round(sum(l['h'] for l in lines)/len(lines)*.35))
+            x0 = max(0, math.floor(min(l['x'] for l in lines))-pad)
+            y0 = max(0, math.floor(min(l['y'] for l in lines))-pad)
+            x1 = min(w, math.ceil(max(l['x']+l['w'] for l in lines))+pad)
+            y1 = min(h, math.ceil(max(l['y']+l['h'] for l in lines))+pad)
+            source = crop_img.convertToFormat(QImage.Format_RGB888)
+            original_pixels = np.frombuffer(source.constBits(),np.uint8).reshape(h,source.bytesPerLine())[:,:w*3].reshape(h,w,3)
+            region = original_pixels[y0:y1,x0:x1]
+            from background_repair import smooth_background
+            smooth = smooth_background(region)
+            if smooth is not None:
+                background = np.ones(region.shape[:2],dtype=bool)
+                for l in lines:
+                    left=max(0,math.floor(l['x'])-pad-x0); right=min(x1-x0,math.ceil(l['x']+l['w'])+pad-x0)
+                    top=max(0,math.floor(l['y'])-pad-y0); bottom=min(y1-y0,math.ceil(l['y']+l['h'])+pad-y0)
+                    background[top:bottom,left:right]=False
+                errors=np.abs(smooth.astype(float)-region.astype(float))[background]
+                if not errors.size or np.quantile(errors,.95) <= 6:
+                    arr[y0+1:y1-1,x0+1:x1-1]=smooth[1:-1,1:-1]
         
         arr = np.ascontiguousarray(arr)
         out = QImage(arr.data, w, h, w * 3, QImage.Format_RGB888).copy()

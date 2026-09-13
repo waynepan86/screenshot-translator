@@ -1,11 +1,11 @@
 import sys
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QButtonGroup, QFrame
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QButtonGroup, QFrame, QGraphicsDropShadowEffect
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QColor, QFont
 from icons import make_icon
 
 
-def _apply_icon(btn, name, color="#E8EAED", checked=None):
+def _apply_icon(btn, name, color="#344054", checked=None):
     btn.setText("")
     btn.setIcon(make_icon(name, color, checked))
     btn.setIconSize(QSize(18, 18))
@@ -20,7 +20,7 @@ class ColorButton(QPushButton):
         self.update_style(False)
 
     def update_style(self, checked):
-        border = "2px solid #FFFFFF" if checked else "1px solid rgba(255,255,255,0.3)"
+        border = "2px solid #1A73E8" if checked else "1px solid rgba(52,64,84,0.3)"
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: {self.color};
@@ -28,7 +28,7 @@ class ColorButton(QPushButton):
                 border-radius: 9px;
             }}
             QPushButton:hover {{
-                border: 2px solid rgba(255, 255, 255, 0.8);
+                border: 2px solid #1A73E8;
             }}
         """)
 
@@ -42,23 +42,23 @@ class ToolbarButton(QPushButton):
         self.setCheckable(True)
         self.setStyleSheet("""
             QPushButton {
-                color: #E8EAED;
+                color: #344054;
                 background-color: transparent;
                 border: none;
                 border-radius: 4px;
             }
             QPushButton:hover {
-                background-color: rgba(255, 255, 255, 0.1);
+                background-color: rgba(52, 64, 84, 0.07);
             }
             QPushButton:checked {
-                background-color: rgba(26, 115, 232, 0.3);
-                color: #8AB4F8;
-                border: 1px solid rgba(26, 115, 232, 0.5);
+                background-color: rgba(26, 115, 232, 0.09);
+                color: #1A73E8;
+                border: 1px solid rgba(26, 115, 232, 0.3);
             }
         """)
 
 class ActionButton(QPushButton):
-    def __init__(self, text, tooltip="", color="#E8EAED", bg_hover="rgba(255,255,255,0.1)", parent=None):
+    def __init__(self, text, tooltip="", color="#344054", bg_hover="rgba(52,64,84,0.07)", parent=None):
         super().__init__(text, parent)
         self.setFixedSize(32, 30)
         self.setToolTip(tooltip)
@@ -98,7 +98,7 @@ class AnnotationToolbar(QWidget):
 
     def init_ui(self):
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setContentsMargins(14, 12, 14, 14)
         layout.setSpacing(4)
 
         # Background Frame
@@ -106,12 +106,17 @@ class AnnotationToolbar(QWidget):
         frame.setObjectName("ToolbarFrame")
         frame.setStyleSheet("""
             QFrame#ToolbarFrame {
-                background-color: rgba(30, 30, 30, 0.92);
-                border: 1px solid rgba(255, 255, 255, 0.08);
-                border-radius: 6px;
+                background-color: #FFFFFF;
+                border: 1px solid #DDE2E8;
+                border-radius: 10px;
             }
         """)
         frame_layout = QHBoxLayout(frame)
+        shadow = QGraphicsDropShadowEffect(frame)
+        shadow.setBlurRadius(20)
+        shadow.setOffset(0, 3)
+        shadow.setColor(QColor(24, 39, 59, 48))
+        frame.setGraphicsEffect(shadow)
         frame_layout.setContentsMargins(8, 4, 8, 4)
         frame_layout.setSpacing(6)
 
@@ -124,10 +129,11 @@ class AnnotationToolbar(QWidget):
         self.btn_arrow = ToolbarButton("", "箭头 (Arrow)", self)
         self.btn_text = ToolbarButton("", "文字 (Text)", self)
         self.btn_cover = ToolbarButton('▧', '遮盖打码：拖动遮住敏感内容', self)
-        _apply_icon(self.btn_pen, "pen", checked="#8AB4F8")
-        _apply_icon(self.btn_rect, "rect", checked="#8AB4F8")
-        _apply_icon(self.btn_arrow, "arrow", checked="#8AB4F8")
-        _apply_icon(self.btn_text, "text", checked="#8AB4F8")
+        _apply_icon(self.btn_pen, "pen", checked="#1A73E8")
+        _apply_icon(self.btn_rect, "rect", checked="#1A73E8")
+        _apply_icon(self.btn_arrow, "arrow", checked="#1A73E8")
+        _apply_icon(self.btn_text, "text", checked="#1A73E8")
+        _apply_icon(self.btn_cover, "cover", checked="#1A73E8")
         
         self.tools_group.addButton(self.btn_pen)
         self.tools_group.addButton(self.btn_rect)
@@ -185,9 +191,9 @@ class AnnotationToolbar(QWidget):
         self.btn_thin = ToolbarButton("", "细 (Thin)", self)
         self.btn_medium = ToolbarButton("", "中 (Medium)", self)
         self.btn_thick = ToolbarButton("", "粗 (Thick)", self)
-        _apply_icon(self.btn_thin, "dot_s", checked="#8AB4F8")
-        _apply_icon(self.btn_medium, "dot_m", checked="#8AB4F8")
-        _apply_icon(self.btn_thick, "dot_l", checked="#8AB4F8")
+        _apply_icon(self.btn_thin, "dot_s", checked="#1A73E8")
+        _apply_icon(self.btn_medium, "dot_m", checked="#1A73E8")
+        _apply_icon(self.btn_thick, "dot_l", checked="#1A73E8")
         
         self.thick_group.addButton(self.btn_thin)
         self.thick_group.addButton(self.btn_medium)
@@ -207,12 +213,12 @@ class AnnotationToolbar(QWidget):
         frame_layout.addWidget(self.create_separator())
 
         # 4. OCR and Translation buttons
-        self.btn_ocr = ActionButton("提取文字", "提取截图中的文字 (OCR)", color="#8AB4F8", bg_hover="rgba(138,180,248,0.2)", parent=self)
+        self.btn_ocr = ActionButton("提取文字", "提取截图中的文字 (OCR)", color="#1A73E8", bg_hover="rgba(26,115,232,0.08)", parent=self)
         self.btn_ocr.clicked.connect(lambda *_: self.ocr_triggered.emit())
         self.btn_ocr.setFixedWidth(64)
         frame_layout.addWidget(self.btn_ocr)
 
-        self.btn_translate = ActionButton("翻译", "中英互译并在原位显示 (In-place Translate)", color="#8AB4F8", bg_hover="rgba(138,180,248,0.2)", parent=self)
+        self.btn_translate = ActionButton("翻译", "中英互译并在原位显示 (In-place Translate)", color="#1A73E8", bg_hover="rgba(26,115,232,0.08)", parent=self)
         self.btn_translate.clicked.connect(lambda *_: self.toggle_translate())
         self.btn_translate.setFixedWidth(48)
         frame_layout.addWidget(self.btn_translate)
@@ -229,11 +235,11 @@ class AnnotationToolbar(QWidget):
         self.btn_save.clicked.connect(lambda *_: self.save_triggered.emit())
         
         self.btn_cancel = ActionButton("", "取消截图 (Cancel)", color="#FF3B30", bg_hover="rgba(255,59,48,0.2)", parent=self)
-        _apply_icon(self.btn_cancel, "cancel", color="#FF6B60")
+        _apply_icon(self.btn_cancel, "cancel", color="#D93025")
         self.btn_cancel.clicked.connect(lambda *_: self.cancel_triggered.emit())
    
         self.btn_confirm = ActionButton("", "完成 (Confirm to Clipboard)", color="#34C759", bg_hover="rgba(52,168,83,0.2)", parent=self)
-        _apply_icon(self.btn_confirm, "confirm", color="#3DDC84")
+        _apply_icon(self.btn_confirm, "confirm", color="#188038")
         self.btn_confirm.clicked.connect(lambda *_: self.confirm_triggered.emit())
 
         frame_layout.addWidget(self.btn_save)
@@ -247,7 +253,7 @@ class AnnotationToolbar(QWidget):
         line = QFrame(self)
         line.setFrameShape(QFrame.VLine)
         line.setFrameShadow(QFrame.Sunken)
-        line.setStyleSheet("background-color: rgba(255, 255, 255, 0.15); width: 1px; max-height: 20px;")
+        line.setStyleSheet("background-color: #E3E7ED; width: 1px; max-height: 20px;")
         return line
 
     def on_tool_clicked(self, tool_name, btn):
@@ -285,7 +291,7 @@ class AnnotationToolbar(QWidget):
             self.btn_translate.setToolTip("恢复原始截图")
             self.btn_translate.setStyleSheet("""
                 QPushButton {
-                    color: #34C759;
+                    color: #188038;
                     background-color: rgba(52, 168, 83, 0.2);
                     border: 1px solid rgba(52, 168, 83, 0.5);
                     border-radius: 4px;
@@ -296,7 +302,7 @@ class AnnotationToolbar(QWidget):
             self.btn_translate.setToolTip("中英互译并在原位显示 (In-place Translate)")
             self.btn_translate.setStyleSheet("""
                 QPushButton {
-                    color: #8AB4F8;
+                    color: #1A73E8;
                     background-color: transparent;
                     border: none;
                     border-radius: 4px;

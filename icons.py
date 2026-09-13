@@ -150,7 +150,17 @@ def _draw_translate(p, c):
     p.drawLine(QPointF(14.2, 8.4), QPointF(11.0, 13.0))
 
 
+def _draw_cover(p, c):
+    p.drawRoundedRect(QRectF(3.5, 4.5, 11, 9), 1, 1)
+    p.save()
+    p.setClipRect(QRectF(4, 5, 10, 8))
+    for x in (0, 4, 8, 12):
+        p.drawLine(QPointF(x, 13), QPointF(x+8, 5))
+    p.restore()
+
+
 _DRAW = {
+    "cover": _draw_cover,
     "pen": _draw_pen,
     "rect": _draw_rect,
     "arrow": _draw_arrow,

@@ -21,7 +21,7 @@ from settings_dialog import SettingsDialog
 import translator
 import ocr
 
-APP_VERSION = "1.10.1"
+APP_VERSION = "1.10.2"
 
 # Native Win32 Hotkey structures
 WM_HOTKEY = 0x0312

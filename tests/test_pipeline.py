@@ -34,6 +34,19 @@ class Config:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_paragraph_repair_removes_chip_backing_on_curved_gradient(self):
+        import numpy as np
+        y,x=np.mgrid[:110,:240]
+        base=np.stack([40+x*.12+y*y*.002,65+x*.05+y*.08,80+x*.03+y*.1],axis=-1).astype(np.uint8)
+        dirty=base.copy()
+        dirty[22:48,80:135]=210
+        dirty[28:40,20:180]=230
+        dirty[68:78,20:180]=230
+        image=QImage(dirty.data,240,110,dirty.strides[0],QImage.Format_RGB888).copy()
+        cleaned,_=CaptureWindow.erase_text_pixels(None,image,[line('First line with PUID',x=20,y=26,w=190,h=16),line('Second line here',x=20,y=66,w=190,h=16)])
+        pixels=np.frombuffer(cleaned.constBits(),np.uint8).reshape(110,cleaned.bytesPerLine())[:,:720].reshape(110,240,3)
+        self.assertLessEqual(np.abs(pixels[24:46,82:132].astype(float)-base[24:46,82:132]).max(),4)
+
     def test_repair_padding_preserves_restored_neighbor(self):
         pix=QPixmap(300,120); pix.fill(QColor('white'))
         painter=QPainter(pix); painter.fillRect(QRect(10,31,120,20),QColor('blue')); painter.end()
