@@ -36,7 +36,7 @@ def plan(paragraph, text, image_width, image_height):
         return None
     font = QFont('Microsoft YaHei')
     start = max(9, round(avg_h * .95))
-    floor = max(9, round(avg_h * .60))
+    floor = max(9, round(avg_h * (.45 if avg_h >= 32 else .60)))
     for size in range(start, floor - 1, -1):
         font.setPixelSize(size)
         fm = QFontMetricsF(font)

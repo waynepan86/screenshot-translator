@@ -34,6 +34,50 @@ class Config:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_repair_padding_preserves_restored_neighbor(self):
+        pix=QPixmap(300,120); pix.fill(QColor('white'))
+        painter=QPainter(pix); painter.fillRect(QRect(10,31,120,20),QColor('blue')); painter.end()
+        window=CaptureWindow(pix,QRect(0,0,300,120),Config()); window.crop_rect=window.rect()
+        window.toolbar=type('Toolbar',(),{'set_translate_state':lambda s,v:None,'hide':lambda s:None})()
+        window.trans_target='zh-CN'
+        window.blocks=[dict(paragraph=[line('Hello world',y=10)],source='Hello world',translation='你好',restored=False,result=dict(ok=True,engine='test')),
+                       dict(paragraph=[line('Keep original',y=31)],source='Keep original',translation='',restored=True,result={})]
+        def erase(image, regions):
+            repaired=image.copy(); repaired.fill(QColor('white')); return repaired,[QColor('black')]
+        with patch.object(window,'erase_text_pixels',erase):
+            window.render_blocks()
+        self.assertEqual(window.translated_pixmap.toImage().copy(QRect(10,31,120,20)),pix.toImage().copy(QRect(10,31,120,20)))
+        window.close()
+
+    def test_large_heading_combines_without_merging_body(self):
+        dummy=type('Dummy',(),{'same_script':lambda s,a,b:True})()
+        paragraphs=CaptureWindow.group_lines_into_paragraphs(dummy,[
+            line('AI research and',x=50,y=20,w=380,h=52),
+            line('safety at the frontier',x=50,y=110,w=560,h=52),
+            line('AI will have a profound impact on the world.',x=720,y=85,w=360,h=20)])
+        self.assertEqual([len(p) for p in paragraphs],[2,1])
+        layout=translation_layout.plan(paragraphs[0],'前沿人工智能研究与安全',1129,227)
+        self.assertIsNotNone(layout)
+
+    def test_repairs_use_original_and_finish_before_drawing(self):
+        pix=QPixmap(300,120); pix.fill(QColor('white'))
+        window=CaptureWindow(pix,QRect(0,0,300,120),Config())
+        window.crop_rect=window.rect()
+        window.toolbar=type('Toolbar',(),{'set_translate_state':lambda s,v:None,'hide':lambda s:None})()
+        window.trans_target='zh-CN'
+        window.blocks=[dict(paragraph=[line(text,x=10,y=y,w=120,h=20)],source=text,translation='你好',restored=False,result=dict(ok=True,engine='test')) for text,y in [('Hello world',10),('Another line',33)]]
+        stages=[]
+        def erase(image, regions):
+            self.assertEqual(image,pix.toImage())
+            stages.append('erase'); return image.copy(),[QColor('black')]
+        real_draw=translation_layout.draw
+        def draw(*args):
+            stages.append('draw'); real_draw(*args)
+        with patch.object(window,'erase_text_pixels',erase),patch.object(translation_layout,'draw',draw):
+            window.render_blocks()
+        self.assertEqual(stages,['erase','erase','draw','draw'])
+        window.close()
+
     def test_inline_code_chips_rejoin_transitively_with_spaces(self):
         fragments = [line('container as non-root via the standard',x=140,y=182,w=463,h=28),
                      line('PUID',x=607,y=181,w=62,h=31),

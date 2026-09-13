@@ -4,7 +4,7 @@ import math
 import re
 from PySide6.QtWidgets import QWidget, QLineEdit, QFileDialog, QMessageBox, QProgressDialog
 from PySide6.QtCore import Qt, QPoint, QRect, QSize, QTimer, QThread, Signal
-from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPixmap, QImage, QCursor, QFontMetrics, QGuiApplication, QLinearGradient
+from PySide6.QtGui import QPainter, QPen, QColor, QBrush, QFont, QPixmap, QImage, QCursor, QFontMetrics, QGuiApplication, QLinearGradient, QRegion
 
 from toolbar import AnnotationToolbar
 from review_panel import OCRPanel
@@ -936,6 +936,8 @@ class CaptureWindow(QWidget):
         # Track each column independently: another column's intervening row
         # must not break a paragraph or become its continuation.
         paragraphs = []
+        heights = sorted(l['h'] for l in lines if l['h'] > 0)
+        body_height = heights[len(heights)//4] if heights else 20
         for line in sorted(lines, key=lambda l: (l['y'], l['x'])):
             choices = []
             new_item = re.match(r'^(\d+[.)]|[-•*>])\s', line['text'].strip())
@@ -946,8 +948,12 @@ class CaptureWindow(QWidget):
                 similar_size = max(previous['h'], line['h']) / max(1, min(previous['h'], line['h'])) <= 1.3
                 # Short labels and code rows are separate layout objects.
                 prose = previous['w'] >= height * 5 and len(previous['text']) >= 12
+                heading = (min(previous['h'], line['h']) >= 32
+                           and (min(previous['h'], line['h']) >= body_height * 1.5 or len(lines) <= 2)
+                           and len(previous['text'].split()) >= 3
+                           and len(line['text'].split()) >= 3)
                 if (not new_item and prose
-                        and 0 <= gap <= height * .7
+                        and 0 <= gap <= height * (1.15 if heading else .7)
                         and abs(previous['x'] - line['x']) <= height * .65
                         and similar_size and self.same_script(previous['text'], line['text'])):
                     choices.append((gap, paragraph))
@@ -1222,10 +1228,12 @@ class CaptureWindow(QWidget):
                 b['status'] += '\n译文无法在原区域完整放下，已保留原图；完整译文见下方。'
                 continue
             jobs.append((b, layout))
-        # Each block is independent. Never erase a block whose layout failed.
+        # Repair from immutable original pixels. Draw only after ALL repairs:
+        # nearby OCR padding must never sample or erase an earlier translation.
+        draw_jobs = []
         for b, layout in jobs:
             regions = b['paragraph']
-            erased = self.erase_text_pixels(crop_img, regions)
+            erased = self.erase_text_pixels(original, regions)
             if erased is None:
                 b['status'] += '\n背景修复不可用，已保留原图。'
                 continue
@@ -1233,8 +1241,28 @@ class CaptureWindow(QWidget):
             if any(c is None for c in inks):
                 b['status'] += '\n文字与背景无法可靠分离，已保留原图。'
                 continue
-            crop_img = cleaned
+            painter = QPainter(crop_img)
+            for region in regions:
+                pad = max(4, round(region['h'] * .2))
+                x0 = max(0, int(region['x'])-pad)
+                y0 = max(0, int(region['y'])-pad)
+                x1 = min(original.width(),int(region['x']+region['w'])+pad)
+                y1 = min(original.height(),int(region['y']+region['h'])+pad)
+                rect = QRect(x0,y0,x1-x0,y1-y0)
+                clip = QRegion(rect)
+                for other in self.blocks:
+                    if other is b:
+                        continue
+                    for neighbor in other['paragraph']:
+                        protected_rect = QRect(math.floor(neighbor['x']),math.floor(neighbor['y']),
+                                               math.ceil(neighbor['w'])+1,math.ceil(neighbor['h'])+1)
+                        clip = clip.subtracted(QRegion(protected_rect))
+                painter.setClipRegion(clip)
+                painter.drawImage(rect,cleaned,rect)
+            painter.end()
             color = inks[0]
+            draw_jobs.append((layout,color))
+        for layout, color in draw_jobs:
             painter = QPainter(crop_img)
             painter.setRenderHint(QPainter.TextAntialiasing)
             translation_layout.draw(painter, layout, color)
