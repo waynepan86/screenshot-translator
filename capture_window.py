@@ -46,6 +46,11 @@ class RectShape:
         painter.setBrush(Qt.NoBrush)
         painter.drawRect(QRect(self.start, self.end))
 
+
+class CoverShape(RectShape):
+    def draw(self, painter):
+        painter.fillRect(QRect(self.start, self.end).normalized(), self.color)
+
 class ArrowShape:
     def __init__(self, start, end, color, width):
         self.start = start
@@ -148,6 +153,9 @@ class CaptureWindow(QWidget):
         self.is_moving = False
         self.drag_start = QPoint()
         self.drag_end = QPoint()
+        self.window_bounds = []
+        self.hover_window = QRect()
+        self.click_window = QRect()
         
         # Resize handle states
         self.active_handle = None # 'TL', 'T', 'TR', 'L', 'R', 'BL', 'B', 'BR'
@@ -193,6 +201,10 @@ class CaptureWindow(QWidget):
         # If no crop rect selected, draw full screen translucent mask
         if self.crop_rect.isEmpty():
             painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
+            if not self.is_selecting and not self.hover_window.isEmpty():
+                painter.drawPixmap(self.hover_window, self.bg_pixmap, self.hover_window)
+                painter.setPen(QPen(QColor(26,115,232),1.5))
+                painter.drawRect(self.hover_window)
             # Draw pixel magnifier
             if self.is_selecting or not self.is_moving:
                 self.draw_magnifier(painter, QCursor.pos() - self.combined_rect.topLeft())
@@ -404,6 +416,7 @@ class CaptureWindow(QWidget):
             self.is_selecting = True
             self.drag_start = pos
             self.drag_end = pos
+            self.click_window = next((r for r in self.window_bounds if r.contains(pos)),QRect())
             self.crop_rect = QRect(pos, QSize(0, 0))
             self.setCursor(Qt.CrossCursor)
         else:
@@ -498,6 +511,8 @@ class CaptureWindow(QWidget):
             
         # 5. Standard cursor hovers
         else:
+            if self.crop_rect.isEmpty():
+                self.hover_window = next((r for r in self.window_bounds if r.contains(pos)),QRect())
             if not self.crop_rect.isEmpty() and not self.active_tool:
                 # Update hover handle & cursor
                 handle = self.get_handle_at(pos)
@@ -527,6 +542,9 @@ class CaptureWindow(QWidget):
         
         if self.is_selecting:
             self.is_selecting = False
+            if (pos-self.drag_start).manhattanLength() <= 4 and not self.click_window.isEmpty():
+                self.crop_rect = self.click_window.intersected(self.rect())
+            self.click_window = QRect()
             # If the crop is very tiny, consider it a fullscreen selection (or cancel)
             if self.crop_rect.width() < 10 or self.crop_rect.height() < 10:
                 self.crop_rect = QRect()
@@ -546,6 +564,13 @@ class CaptureWindow(QWidget):
             
         elif self.current_shape:
             # Finished drawing current shape
+            if isinstance(self.current_shape, CoverShape):
+                # Future OCR must not send text hidden by a cover. Keep an
+                # already rendered translation available for export.
+                self.ocr_result = None
+                self.paragraphs = []
+                self.blocks = []
+                self.close_ocr_panel()
             self.shapes.append(self.current_shape)
             self.current_shape = None
             self.update()
@@ -594,6 +619,8 @@ class CaptureWindow(QWidget):
             self.current_shape.add_point(bounded_pos)
         elif self.active_tool == 'rect':
             self.current_shape = RectShape(bounded_pos, bounded_pos, self.draw_color, self.draw_thickness)
+        elif self.active_tool == 'cover':
+            self.current_shape = CoverShape(bounded_pos, bounded_pos, self.draw_color, self.draw_thickness)
         elif self.active_tool == 'arrow':
             self.current_shape = ArrowShape(bounded_pos, bounded_pos, self.draw_color, self.draw_thickness)
         elif self.active_tool == 'text':
@@ -660,6 +687,7 @@ class CaptureWindow(QWidget):
             self.toolbar.save_triggered.connect(self.save_screenshot_dialog)
             self.toolbar.cancel_triggered.connect(self.close_and_cancel)
             self.toolbar.confirm_triggered.connect(self.confirm_to_clipboard)
+            self.toolbar.pin_triggered.connect(self.pin_to_screen)
             
         self.reposition_toolbar()
         self.toolbar.show()
@@ -732,8 +760,15 @@ class CaptureWindow(QWidget):
         self.draw_thickness = size
 
     def on_undo(self):
+        if self.is_loading:
+            return
         if self.shapes:
-            self.shapes.pop()
+            removed = self.shapes.pop()
+            if isinstance(removed, CoverShape):
+                self.ocr_result = None
+                self.paragraphs = []
+                self.blocks = []
+                self.close_ocr_panel()
             self.update()
 
     def close_and_cancel(self):
@@ -771,6 +806,21 @@ class CaptureWindow(QWidget):
             
         painter.end()
         return crop_pixmap
+
+    def pin_to_screen(self):
+        if self.is_loading or self.crop_rect.isEmpty():
+            return
+        if self.text_input:
+            self.confirm_text_input()
+        from pin_window import PinWindow
+        current = self.grab_cropped_pixmap()
+        translated = self.is_translated_view
+        self.is_translated_view = False
+        original = self.grab_cropped_pixmap()
+        self.is_translated_view = translated
+        pin = PinWindow(current, original, self.mapToGlobal(self.crop_rect.topLeft()))
+        pin.show()
+        self.close_and_cancel()
 
     def confirm_to_clipboard(self):
         if self.is_loading:
@@ -839,6 +889,12 @@ class CaptureWindow(QWidget):
         fd, temp_raw_path = tempfile.mkstemp(suffix=".png", prefix="snip_raw_")
         os.close(fd)
         crop_pixmap = self.bg_pixmap.copy(self.crop_rect)
+        painter = QPainter(crop_pixmap)
+        painter.translate(-self.crop_rect.topLeft())
+        for shape in self.shapes:
+            if isinstance(shape, CoverShape):
+                shape.draw(painter)
+        painter.end()
         crop_pixmap.save(temp_raw_path, "PNG")
         
         fd, temp_ocr_path = tempfile.mkstemp(suffix=".png", prefix="snip_ocr_")
@@ -926,7 +982,8 @@ class CaptureWindow(QWidget):
                 if merged and ord(merged[-1]) < 128 and text and ord(text[0]) < 128:
                     # Strip end-of-line hyphens (e.g. "winrt-" + "Windows" -> "winrt-Windows")
                     if merged.endswith("-"):
-                        merged = merged[:-1] + text
+                        from ocr_review import join_broken_word
+                        merged = join_broken_word(merged, text)
                     else:
                         merged = merged + " " + text
                 else:
@@ -1481,6 +1538,8 @@ class CaptureWindow(QWidget):
         elif event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
             # Ctrl+Z: Undo shape
             self.on_undo()
+        elif event.key() == Qt.Key_F3:
+            self.pin_to_screen()
         else:
             super().keyPressEvent(event)
 

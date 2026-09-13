@@ -87,6 +87,7 @@ class AnnotationToolbar(QWidget):
     save_triggered = Signal()
     cancel_triggered = Signal()
     confirm_triggered = Signal()
+    pin_triggered = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,6 +123,7 @@ class AnnotationToolbar(QWidget):
         self.btn_rect = ToolbarButton("", "矩形 (Rectangle)", self)
         self.btn_arrow = ToolbarButton("", "箭头 (Arrow)", self)
         self.btn_text = ToolbarButton("", "文字 (Text)", self)
+        self.btn_cover = ToolbarButton('▧', '遮盖打码：拖动遮住敏感内容', self)
         _apply_icon(self.btn_pen, "pen", checked="#8AB4F8")
         _apply_icon(self.btn_rect, "rect", checked="#8AB4F8")
         _apply_icon(self.btn_arrow, "arrow", checked="#8AB4F8")
@@ -131,17 +133,20 @@ class AnnotationToolbar(QWidget):
         self.tools_group.addButton(self.btn_rect)
         self.tools_group.addButton(self.btn_arrow)
         self.tools_group.addButton(self.btn_text)
+        self.tools_group.addButton(self.btn_cover)
 
         frame_layout.addWidget(self.btn_pen)
         frame_layout.addWidget(self.btn_rect)
         frame_layout.addWidget(self.btn_arrow)
         frame_layout.addWidget(self.btn_text)
+        frame_layout.addWidget(self.btn_cover)
 
         # Connections for tools
         self.btn_pen.clicked.connect(lambda *_: self.on_tool_clicked('pen', self.btn_pen))
         self.btn_rect.clicked.connect(lambda *_: self.on_tool_clicked('rect', self.btn_rect))
         self.btn_arrow.clicked.connect(lambda *_: self.on_tool_clicked('arrow', self.btn_arrow))
         self.btn_text.clicked.connect(lambda *_: self.on_tool_clicked('text', self.btn_text))
+        self.btn_cover.clicked.connect(lambda *_: self.on_tool_clicked('cover', self.btn_cover))
 
         # Undo Action
         self.btn_undo = ActionButton("", "撤销 (Undo)", parent=self)
@@ -216,6 +221,9 @@ class AnnotationToolbar(QWidget):
         frame_layout.addWidget(self.create_separator())
 
         # 5. Core actions (Save, Cancel, Confirm)
+        self.btn_pin = ActionButton('贴图', '将当前截图或译文置顶 (F3)', parent=self)
+        self.btn_pin.clicked.connect(lambda *_: self.pin_triggered.emit())
+        frame_layout.addWidget(self.btn_pin)
         self.btn_save = ActionButton("", "保存到文件 (Save)", parent=self)
         _apply_icon(self.btn_save, "save")
         self.btn_save.clicked.connect(lambda *_: self.save_triggered.emit())

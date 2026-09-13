@@ -4,7 +4,8 @@ from PySide6.QtGui import QFont, QFontMetricsF, QTextLayout, QTextOption
 
 
 def wrap(text, font, width):
-    text = text.replace('\n', ' ')
+    if '\n' in text:
+        return [row for part in text.split('\n') for row in (wrap(part, font, width) if part else [''])]
     utf16 = text.encode('utf-16-le')
     layout = QTextLayout(text, font)
     option = QTextOption()
@@ -41,13 +42,17 @@ def plan(paragraph, text, image_width, image_height):
         fm = QFontMetricsF(font)
         rows = wrap(text, font, box.width())
         ink_h = max((fm.tightBoundingRect(row).height() for row in rows), default=0)
-        total_h = ink_h + max(0, len(rows) - 1) * fm.lineSpacing()
+        spacing = fm.lineSpacing()
+        # Preserve the original line rhythm when translation keeps its rows.
+        if len(rows) == len(paragraph) and len(rows) > 1:
+            source_spacing = (bottom - top - avg_h) / (len(rows) - 1)
+            spacing = max(ink_h, source_spacing)
+        total_h = ink_h + max(0, len(rows) - 1) * spacing
         if rows and total_h <= box.height() + .1 and all(fm.horizontalAdvance(row) <= box.width() + .1 for row in rows):
             centers = [l['x'] + l['w'] / 2 for l in paragraph]
             centered = len(paragraph) > 1 and max(centers) - min(centers) < avg_h * .4 and max(l['x'] for l in paragraph) - left > avg_h * .5
-            short_label = len(paragraph) == 1 and len(paragraph[0]['text']) <= 12 and len(paragraph[0]['text'].split()) <= 2
-            align = 'center' if centered or short_label else 'left'
-            return dict(box=box, font=QFont(font), rows=rows, height=total_h, align=align)
+            align = 'center' if centered else 'left'
+            return dict(box=box, font=QFont(font), rows=rows, height=total_h, spacing=spacing, align=align)
     return None
 
 
@@ -63,5 +68,5 @@ def draw(painter, layout, color):
         x = layout['box'].left()
         if layout['align'] == 'center':
             x += (layout['box'].width() - fm.horizontalAdvance(row)) / 2
-        painter.drawText(QPointF(x, top - ink.top() + i * fm.lineSpacing()), row)
+        painter.drawText(QPointF(x, top - ink.top() + i * layout['spacing']), row)
     painter.restore()

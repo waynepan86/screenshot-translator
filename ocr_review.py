@@ -4,6 +4,22 @@ import time
 from difflib import SequenceMatcher
 
 _spell = None
+_PROTECTED = re.compile(r'https?://\S+|www\.\S+|[\w.$:/\\@{}<>=-]*[\d_$:/\\@{}<>=][\w.$:/\\@{}<>=-]*|\b\w+\.\w+\b|\b\w*[a-z][A-Z]\w*\b|\b[A-Z][A-Z0-9]+\b')
+
+
+def protected_parts(text):
+    return _PROTECTED.findall(text)
+
+
+def safe_change(old, new):
+    # Preserve identifiers exactly, while allowing small repairs in prose.
+    if protected_parts(old) != protected_parts(new):
+        return False
+    before = _PROTECTED.sub(' ', old)
+    after = _PROTECTED.sub(' ', new)
+    matcher = SequenceMatcher(None, before, after)
+    edits = sum(max(b-a, d-c) for tag, a, b, c, d in matcher.get_opcodes() if tag != 'equal')
+    return 0 < edits <= max(2, min(4, len(before) // 30)) and matcher.ratio() >= .75
 
 
 def protected(text):
@@ -12,8 +28,7 @@ def protected(text):
 
 def spelling_flags(text):
     global _spell
-    if protected(text):
-        return []
+    text = _PROTECTED.sub(' ', text)
     try:
         if _spell is None:
             from spellchecker import SpellChecker
@@ -23,6 +38,17 @@ def spelling_flags(text):
         return sorted(_spell.unknown(words))
     except ImportError:
         return []
+
+
+def join_broken_word(left, right):
+    match = re.search(r'\b([a-z]{2,})-$', left)
+    next_word = re.match(r'([a-z]{2,})\b', right)
+    if match and next_word:
+        joined = match[1] + next_word[1]
+        # A real hyphenated identifier must not be joined speculatively.
+        if not spelling_flags(joined) and _spell is not None:
+            return left[:-1] + right
+    return left + right
 
 
 def review_result(result, image_path, scale_factor, recognize, progress=None):
@@ -47,7 +73,7 @@ def review_result(result, image_path, scale_factor, recognize, progress=None):
             if time.monotonic() - started > 4:
                 break
             if progress:
-                progress(f'正在复核可疑文字 {i + 1}/{min(6, len(pending))}…')
+                progress('正在识别文字…')
             pad = max(4, round(line['h'] * scale_factor * .2))
             box = (max(0, int(line['x'] * scale_factor) - pad),
                    max(0, int(line['y'] * scale_factor) - pad),
@@ -72,7 +98,7 @@ def review_result(result, image_path, scale_factor, recognize, progress=None):
             candidate, score = candidates[0]
             agreement = candidate == candidates[1][0] and min(score, candidates[1][1]) >= .96
             close = SequenceMatcher(None, old.casefold(), candidate.casefold()).ratio() >= .75
-            if agreement and candidate != old and close and not protected(old) and not protected(candidate):
+            if agreement and candidate != old and close and safe_change(old, candidate):
                 # Dictionary never generates replacement text. Require a real
                 # improvement as well as agreement between two image passes.
                 if (line.get('confidence', 1) < .90 or len(spelling_flags(candidate)) < len(spelling_flags(old))):

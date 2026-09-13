@@ -34,6 +34,121 @@ class Config:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_inline_code_chips_rejoin_transitively_with_spaces(self):
+        fragments = [line('container as non-root via the standard',x=140,y=182,w=463,h=28),
+                     line('PUID',x=607,y=181,w=62,h=31),
+                     line('and',x=674,y=187,w=45,h=26),
+                     line('PGID',x=724,y=181,w=68,h=31),
+                     line('environment variables. When using',x=794,y=181,w=428,h=32)]
+        for fragment in fragments:
+            fragment['words'][0]['whole_fragment'] = True
+        merged = ocr.merge_line_fragments(fragments)
+        self.assertEqual(len(merged),1)
+        self.assertEqual(merged[0]['text'],'container as non-root via the standard PUID and PGID environment variables. When using')
+        fragments = [line('a',x=139,y=503,w=21,h=24),line('.env',x=169,y=496,w=55,h=34),line('file.',x=228,y=502,w=55,h=25)]
+        for fragment in fragments:
+            fragment['words'][0]['whole_fragment'] = True
+        merged = ocr.merge_line_fragments(fragments)
+        self.assertEqual(len(merged),1)
+        self.assertEqual(merged[0]['text'],'a .env file.')
+
+    def test_cover_is_present_in_ocr_input(self):
+        from capture_window import CoverShape
+        from PySide6.QtCore import QPoint
+        pix=QPixmap(200,100); pix.fill(QColor('white'))
+        window=CaptureWindow(pix,QRect(0,0,200,100),Config())
+        window.crop_rect=QRect(0,0,200,100)
+        window.shapes=[CoverShape(QPoint(20,20),QPoint(60,40),QColor('black'),4)]
+        path, scale = window.prepare_ocr_image()
+        try:
+            image = QImage(path)
+            self.assertEqual(image.pixelColor(round(30*scale),round(30*scale)),QColor('black'))
+        finally:
+            os.unlink(path); window.close()
+
+    def test_window_bounds_map_mixed_dpi(self):
+        from window_selection import logical_bounds
+        monitors = [(QRect(-1920,0,1920,1080),QRect(-1920,0,1920,1080)),
+                    (QRect(0,0,2560,1440),QRect(0,0,1280,720))]
+        self.assertEqual(logical_bounds(QRect(200,100,600,400),monitors),QRect(100,50,300,200))
+        self.assertEqual(logical_bounds(QRect(-200,100,200,400),monitors),QRect(-200,100,200,400))
+
+    def test_window_click_selects_and_drag_stays_manual(self):
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtCore import QEvent,QPointF,Qt
+        pix=QPixmap(300,200); pix.fill(QColor('white'))
+        for end, expected in [(QPointF(70,70),QRect(20,20,150,120)),(QPointF(130,110),QRect(70,70,61,41))]:
+            window=CaptureWindow(pix,QRect(0,0,300,200),Config())
+            window.window_bounds=[QRect(20,20,150,120)]
+            window.mousePressEvent(QMouseEvent(QEvent.MouseButtonPress,QPointF(70,70),QPointF(70,70),Qt.LeftButton,Qt.LeftButton,Qt.NoModifier))
+            window.mouseMoveEvent(QMouseEvent(QEvent.MouseMove,end,end,Qt.NoButton,Qt.LeftButton,Qt.NoModifier))
+            window.mouseReleaseEvent(QMouseEvent(QEvent.MouseButtonRelease,end,end,Qt.LeftButton,Qt.NoButton,Qt.NoModifier))
+            self.assertEqual(window.crop_rect,expected)
+            window.close()
+
+    def test_mixed_prose_correction_preserves_identifiers(self):
+        from PIL import Image
+        old = 'Set $PUID to 1000 and check the heilo message in .env'
+        new = old.replace('heilo', 'hello')
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / 'image.png'
+            Image.new('RGB', (800, 100), 'white').save(path)
+            result = ocr_review.review_result({'lines':[line(old, w=700, confidence=.7)]}, str(path), 1,
+                                             lambda _: {'lines':[line(new, confidence=.99)]})
+            self.assertEqual(result['lines'][0]['text'], new)
+        self.assertFalse(ocr_review.safe_change(old, new.replace('$PUID', '$PUIO')))
+        self.assertFalse(ocr_review.safe_change(old, new.replace('1000', '100')))
+        self.assertFalse(ocr_review.safe_change('This sentence is unclear', 'A completely different sentence'))
+
+    def test_linebreak_hyphens_preserve_compounds(self):
+        self.assertEqual(ocr_review.join_broken_word('An environ-', 'ment variable'), 'An environment variable')
+        self.assertEqual(ocr_review.join_broken_word('Run as non-', 'root'), 'Run as non-root')
+        self.assertEqual(ocr_review.join_broken_word('winrt-', 'Windows'), 'winrt-Windows')
+
+    def test_explicit_translation_linebreaks_survive(self):
+        font = QFont('Microsoft YaHei'); font.setPixelSize(16)
+        self.assertEqual(translation_layout.wrap('第一行\n第二行', font, 300), ['第一行', '第二行'])
+        plan = translation_layout.plan([line('Label', w=120)], '标签', 300, 120)
+        self.assertEqual(plan['align'], 'left')
+
+    def test_pin_survives_capture_and_space_restores(self):
+        from pin_window import _pins
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtCore import QEvent, Qt
+        original = QPixmap(300,120); original.fill(QColor('white'))
+        translated = QPixmap(300,120); translated.fill(QColor('blue'))
+        window = CaptureWindow(original, QRect(0,0,300,120), Config())
+        window.crop_rect = QRect(10,10,100,50)
+        window.translated_pixmap = translated.copy(QRect(0,0,100,50))
+        window.is_translated_view = True
+        window.pin_to_screen(); app.processEvents()
+        self.assertEqual(len(_pins), 1)
+        pin = next(iter(_pins))
+        self.assertEqual(pin.image.toImage().pixelColor(20,20), QColor('blue'))
+        self.assertEqual(pin.original.toImage().pixelColor(20,20), QColor('white'))
+        pin.keyPressEvent(QKeyEvent(QEvent.KeyPress,Qt.Key_Space,Qt.NoModifier))
+        self.assertTrue(pin.peek)
+        pin.keyReleaseEvent(QKeyEvent(QEvent.KeyRelease,Qt.Key_Space,Qt.NoModifier))
+        self.assertFalse(pin.peek)
+        pin.close()
+        from PySide6.QtCore import QCoreApplication
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+        self.assertFalse(_pins)
+
+    def test_cover_baked_into_original_and_translation(self):
+        from capture_window import CoverShape
+        from PySide6.QtCore import QPoint
+        pix = QPixmap(200,100); pix.fill(QColor('white'))
+        window = CaptureWindow(pix,QRect(0,0,200,100),Config())
+        window.crop_rect=QRect(0,0,200,100)
+        window.shapes=[CoverShape(QPoint(60,40),QPoint(20,20),QColor('black'),4)]
+        for translated in (False,True):
+            window.is_translated_view=translated; window.translated_pixmap=pix
+            image=window.grab_cropped_pixmap().toImage()
+            self.assertEqual(image.pixelColor(30,30),QColor('black'))
+            self.assertEqual(image.pixelColor(10,10),QColor('white'))
+        window.close()
+
     def test_translation_completion_does_not_open_panel(self):
         pix=QPixmap(300,120); pix.fill(QColor('white'))
         window=CaptureWindow(pix,QRect(0,0,300,120),Config())

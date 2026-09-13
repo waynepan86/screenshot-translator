@@ -21,7 +21,7 @@ from settings_dialog import SettingsDialog
 import translator
 import ocr
 
-APP_VERSION = "1.9.1"
+APP_VERSION = "1.10.0"
 
 # Native Win32 Hotkey structures
 WM_HOTKEY = 0x0312
@@ -273,7 +273,10 @@ class ScreenshotApp:
         painter.end()
         
         # Spawn Crop selector overlay window
+        from window_selection import snapshot_windows
+        window_bounds = snapshot_windows(screens) if not fullscreen else []
         self.active_capture_window = CaptureWindow(combined_pixmap, combined_rect, self.config)
+        self.active_capture_window.window_bounds = [r.translated(-combined_rect.topLeft()) for r in window_bounds]
         self.active_capture_window.capture_done.connect(self.on_capture_completed)
         self.active_capture_window.capture_cancelled.connect(self.on_capture_cancelled)
         

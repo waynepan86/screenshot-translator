@@ -20,7 +20,7 @@ def run(output):
         import ocr
         app = QApplication.instance() or QApplication([])
         cfg=type('Config',(),{'get':lambda self,key:DEFAULT_CONFIG.get(key)})()
-        help=HelpDialog(cfg,'1.9.1')
+        help=HelpDialog(cfg,'1.10.0')
         assert '小幅纠偏' in help.browser.toPlainText()
         from background_repair import smooth_background
         assert smooth_background(np.full((20,40,3),70,dtype=np.uint8)) is not None
@@ -35,7 +35,14 @@ def run(output):
         arr=np.frombuffer(sample.constBits(),np.uint8).reshape(70,sample.bytesPerLine())[:,:1050].reshape(70,350,3)
         result=ocr.run_ocr_rapid(arr[:,:,::-1].copy())
         assert result['lines'], 'OCR model produced no text'
-        report=dict(ok=True,help=True,spelling=True,ocr_text=result['text'],opencv=cv2.__version__)
+        from pin_window import PinWindow
+        from PySide6.QtGui import QPixmap, QGuiApplication
+        from PySide6.QtCore import QPoint
+        pin = PinWindow(QPixmap.fromImage(sample),QPixmap.fromImage(sample),QPoint(20,20))
+        pin.show(); app.processEvents(); assert pin.isVisible(); pin.close()
+        from window_selection import snapshot_windows
+        bounds = snapshot_windows(QGuiApplication.screens())
+        report=dict(ok=True,help=True,spelling=True,pin=True,window_snapshot_count=len(bounds),ocr_text=result['text'],opencv=cv2.__version__)
         panel.close(); help.close()
     except Exception:
         report=dict(ok=False,error=traceback.format_exc())

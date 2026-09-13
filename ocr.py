@@ -111,7 +111,7 @@ def _run_ocr_rapid(image_path, scale_factor=1.0):
             "confidence": float(score),
             "polygon": [[px / scale_factor, py / scale_factor] for px, py in box],
             "original_text": text,
-            "words": [{"text": text, "x": x, "y": y, "w": w, "h": h}],
+            "words": [{"text": text, "x": x, "y": y, "w": w, "h": h, "whole_fragment": True}],
         })
 
     lines = merge_line_fragments(lines)
@@ -144,7 +144,7 @@ def rebuild_line_text(words):
         # A real inter-word space is ~0.25x the glyph height; anything much
         # tighter is a mis-segmented word ("exa mple") and gets glued back.
         pair_h = min(prev["h"], cur["h"])
-        if _is_cjk(prev_ch) or _is_cjk(cur_ch) or gap < pair_h * 0.2:
+        if _is_cjk(prev_ch) or _is_cjk(cur_ch) or (gap < pair_h * 0.2 and not (prev.get('whole_fragment') or cur.get('whole_fragment'))):
             parts[-1] += cur["text"]
         else:
             parts.append(cur["text"])
@@ -176,7 +176,7 @@ def merge_line_fragments(lines):
             height_ratio = max(line['h'], g_bottom - g_top) / max(1, min(line['h'], g_bottom - g_top))
             if ((bottom - top) > 0.65 * min(line["h"], g_bottom - g_top)
                     and gap <= min(line['h'], g_bottom - g_top) * .65
-                    and height_ratio <= 1.3):
+                    and height_ratio <= 1.6):
                 target = g
                 break
         if target is not None:
@@ -184,6 +184,26 @@ def merge_line_fragments(lines):
         else:
             groups.append([line])
             
+    # A later fragment can bridge two groups created earlier. Join them
+    # transitively so inline chips do not separate the left/right sentence.
+    changed = True
+    while changed:
+        changed = False
+        for i, first in enumerate(groups):
+            a = dict(x=min(l['x'] for l in first),y=min(l['y'] for l in first))
+            a['w'] = max(l['x']+l['w'] for l in first)-a['x']
+            a['h'] = max(l['y']+l['h'] for l in first)-a['y']
+            for j in range(i+1,len(groups)):
+                second = groups[j]
+                x = min(l['x'] for l in second); y = min(l['y'] for l in second)
+                w = max(l['x']+l['w'] for l in second)-x
+                h = max(l['y']+l['h'] for l in second)-y
+                overlap = min(a['y']+a['h'],y+h)-max(a['y'],y)
+                gap = max(a['x']-x-w,x-a['x']-a['w'],0)
+                if overlap > .65*min(a['h'],h) and gap <= .65*min(a['h'],h) and max(a['h'],h)/max(1,min(a['h'],h)) <= 1.6:
+                    first.extend(second); groups.pop(j); changed = True; break
+            if changed:
+                break
     merged = []
     for g in groups:
         words = []
