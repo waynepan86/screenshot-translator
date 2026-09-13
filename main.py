@@ -340,18 +340,20 @@ class ScreenshotApp:
     def show_about(self):
         QMessageBox.about(
             None,
-            "关于轻量级截图工具",
-            f"<h3>轻量级截图工具 v{APP_VERSION}</h3>"
-            "<p>一款极致轻量化的桌面截图工具。</p>"
-            "<b>核心特色：</b>"
+            "关于截图工具 · Screenshot Translator",
+            f"<h3>截图工具 · Screenshot Translator</h3><p>版本 {APP_VERSION}</p>"
+            "<p>一款 Windows 截图翻译工具：框选屏幕，识别并翻译文字，将译文显示在原文位置，方便阅读外文网页、软件界面和文档。</p>"
+            "<b>主要功能：</b>"
             "<ul>"
             "<li>F1 区域自由截图 / F2 全屏截图</li>"
-            "<li>RapidOCR (PP-OCRv6) 离线文字提取 (高精度/无需网络)</li>"
-            "<li>中英自动互译的智能原位翻译 (可选 Azure/大模型/百度/有道/DeepL 引擎)</li>"
-            "<li>基础标注工具：画笔、矩形、箭头、文字标注</li>"
-            "<li>设置面板自定义快捷键、翻译引擎与自启动</li>"
+            "<li>本地 OCR 与后台小幅纠偏，支持 DeepL 等在线翻译服务</li>"
+            "<li>原位译文显示，按住空格查看原图；放不下的译文可从提取文字入口查看</li>"
+            "<li>F3 贴图置顶，支持拖动、缩放和透明度调整</li>"
+            "<li>窗口选择、画笔、矩形、箭头、文字及遮盖打码</li>"
+            "<li>复制与保存截图，自定义截图快捷键和开机启动</li>"
             "</ul>"
-            "<p>Powered by Wayne</p>"
+            "<p>托盘右键 → 使用说明，可查看完整操作和配置方法。</p>"
+            "<p><a href='https://github.com/waynepan86/screenshot-translator'>GitHub 项目</a> · Powered by Wayne</p>"
         )
 
     def quit_app(self):
