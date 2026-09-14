@@ -953,7 +953,11 @@ class CaptureWindow(QWidget):
                            and len(previous['text'].split()) >= 3
                            and len(line['text'].split()) >= 3)
                 if (not new_item and prose
-                        and 0 <= gap <= height * (1.15 if heading else .7)
+                        # Detection boxes include ascenders, descenders and
+                        # underlines, so tight visual rows may overlap slightly.
+                        # Accept that padding instead of skipping the middle
+                        # row and later joining the first and third rows.
+                        and -height * .18 <= gap <= height * (1.15 if heading else .7)
                         and abs(previous['x'] - line['x']) <= height * .65
                         and similar_size and self.same_script(previous['text'], line['text'])):
                     choices.append((gap, paragraph))

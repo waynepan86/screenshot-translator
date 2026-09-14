@@ -34,6 +34,21 @@ class Config:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_tight_three_line_heading_keeps_middle_row(self):
+        dummy=type('Dummy',(),{'same_script':lambda s,a,b:True})()
+        paragraphs=CaptureWindow.group_lines_into_paragraphs(dummy,[
+            line('AI research and',x=52,y=45,w=467,h=71),
+            line('products that put',x=48,y=112,w=535,h=73),
+            line('safety at the frontier',x=46,y=173,w=634,h=75),
+            line('AI will have a vast impact on the world.',x=752,y=114,w=399,h=28),
+            line('Anthropic is a public benefit corporation',x=752,y=145,w=419,h=29)])
+        self.assertEqual([len(p) for p in paragraphs],[3,2])
+        self.assertEqual(CaptureWindow.merge_paragraph_text(None,paragraphs[0]),
+                         'AI research and products that put safety at the frontier')
+        layout=translation_layout.plan(paragraphs[0],'将安全置于前沿的人工智能研究与产品',1196,271)
+        self.assertIsNotNone(layout)
+        self.assertLessEqual(layout['height'],layout['box'].height()+.1)
+
     def test_paragraph_repair_removes_chip_backing_on_curved_gradient(self):
         import numpy as np
         y,x=np.mgrid[:110,:240]
