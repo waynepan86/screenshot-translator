@@ -143,6 +143,10 @@ class CaptureWindow(QWidget):
         # Window attributes
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.BypassWindowManagerHint)
         self.setAttribute(Qt.WA_DeleteOnClose)
+        # Before a region is chosen, let the live desktop show through the
+        # translucent mask. Repainting a captured ClearType desktop beneath
+        # the mask makes subpixel-rendered text look soft even at 100% DPI.
+        self.setAttribute(Qt.WA_TranslucentBackground)
         self.setGeometry(self.combined_rect)
         self.setMouseTracking(True)
         
@@ -195,20 +199,30 @@ class CaptureWindow(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # 1. Draw stitched desktop image
-        painter.drawPixmap(0, 0, self.bg_pixmap)
-        
-        # If no crop rect selected, draw full screen translucent mask
+        # Before selection, only paint a translucent mask. The real desktop
+        # remains visible underneath, preserving its native text rendering.
         if self.crop_rect.isEmpty():
-            painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
             if not self.is_selecting and not self.hover_window.isEmpty():
-                painter.drawPixmap(self.hover_window, self.bg_pixmap, self.hover_window)
+                mask = QColor(0, 0, 0, 100)
+                painter.fillRect(0, 0, self.width(), self.hover_window.top(), mask)
+                painter.fillRect(0, self.hover_window.bottom()+1, self.width(),
+                                 self.height()-self.hover_window.bottom()-1, mask)
+                painter.fillRect(0, self.hover_window.top(), self.hover_window.left(),
+                                 self.hover_window.height(), mask)
+                painter.fillRect(self.hover_window.right()+1, self.hover_window.top(),
+                                 self.width()-self.hover_window.right()-1,
+                                 self.hover_window.height(), mask)
                 painter.setPen(QPen(QColor(26,115,232),1.5))
                 painter.drawRect(self.hover_window)
+            else:
+                painter.fillRect(self.rect(), QColor(0, 0, 0, 100))
             # Draw pixel magnifier
             if self.is_selecting or not self.is_moving:
                 self.draw_magnifier(painter, QCursor.pos() - self.combined_rect.topLeft())
             return
+
+        # Once selection starts, draw the frozen desktop snapshot.
+        painter.drawPixmap(0, 0, self.bg_pixmap)
             
         # 2. Draw mask outside the crop selection
         mask_color = QColor(0, 0, 0, 100)

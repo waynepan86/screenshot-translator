@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontMetrics, QPixmap, QFontDatabase
-from PySide6.QtCore import QRect
+from PySide6.QtCore import QRect, Qt
 import ocr
 import ocr_review
 import translation_layout
@@ -34,6 +34,22 @@ class Config:
 
 
 class PipelineTests(unittest.TestCase):
+    def test_empty_selection_paints_only_translucent_mask(self):
+        pix=QPixmap(200,100); pix.fill(QColor('white'))
+        window=CaptureWindow(pix,QRect(0,0,200,100),Config())
+        window.draw_magnifier=lambda *args:None
+        image=QImage(200,100,QImage.Format_ARGB32_Premultiplied)
+        image.fill(Qt.transparent)
+        window.render(image)
+        center=image.pixelColor(100,50)
+        self.assertEqual(center.alpha(),100)
+        self.assertLessEqual(center.red(),1)
+        window.hover_window=QRect(20,20,80,40)
+        image.fill(Qt.transparent); window.render(image)
+        self.assertEqual(image.pixelColor(50,35).alpha(),0)
+        self.assertEqual(image.pixelColor(150,35).alpha(),100)
+        window.close()
+
     def test_tight_three_line_heading_keeps_middle_row(self):
         dummy=type('Dummy',(),{'same_script':lambda s,a,b:True})()
         paragraphs=CaptureWindow.group_lines_into_paragraphs(dummy,[
