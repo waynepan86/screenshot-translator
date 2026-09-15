@@ -21,7 +21,7 @@ from settings_dialog import SettingsDialog
 import translator
 import ocr
 
-APP_VERSION = "1.10.4"
+APP_VERSION = "1.10.5"
 
 # Native Win32 Hotkey structures
 WM_HOTKEY = 0x0312
@@ -382,3 +382,4 @@ if __name__ == "__main__":
     
     app_instance = ScreenshotApp()
     sys.exit(app_instance.run())
+

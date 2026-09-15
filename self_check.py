@@ -20,7 +20,7 @@ def run(output):
         import ocr
         app = QApplication.instance() or QApplication([])
         cfg=type('Config',(),{'get':lambda self,key:DEFAULT_CONFIG.get(key)})()
-        help=HelpDialog(cfg,'1.10.2')
+        help=HelpDialog(cfg,'1.10.5')
         assert '小幅纠偏' in help.browser.toPlainText()
         from background_repair import smooth_background
         assert smooth_background(np.full((20,40,3),70,dtype=np.uint8)) is not None
@@ -48,3 +48,4 @@ def run(output):
         report=dict(ok=False,error=traceback.format_exc())
     Path(output).write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     return 0 if report['ok'] else 1
+

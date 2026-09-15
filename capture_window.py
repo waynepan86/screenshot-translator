@@ -212,6 +212,10 @@ class CaptureWindow(QWidget):
                 painter.fillRect(self.hover_window.right()+1, self.hover_window.top(),
                                  self.width()-self.hover_window.right()-1,
                                  self.hover_window.height(), mask)
+                # A fully transparent pixel in a Windows layered window is
+                # excluded from native hit testing. Keep the highlighted area
+                # visually clear while retaining mouse input for selection.
+                painter.fillRect(self.hover_window, QColor(0, 0, 0, 1))
                 painter.setPen(QPen(QColor(26,115,232),1.5))
                 painter.drawRect(self.hover_window)
             else:
@@ -1671,3 +1675,4 @@ class CaptureWindow(QWidget):
                 os.remove(path)
             except OSError:
                 pass
+

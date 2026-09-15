@@ -46,7 +46,9 @@ class PipelineTests(unittest.TestCase):
         self.assertLessEqual(center.red(),1)
         window.hover_window=QRect(20,20,80,40)
         image.fill(Qt.transparent); window.render(image)
-        self.assertEqual(image.pixelColor(50,35).alpha(),0)
+        # Alpha 1 is visually transparent but remains part of the native
+        # Windows layered-window hit-test region.
+        self.assertEqual(image.pixelColor(50,35).alpha(),1)
         self.assertEqual(image.pixelColor(150,35).alpha(),100)
         window.close()
 
@@ -470,3 +472,4 @@ class PipelineTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
