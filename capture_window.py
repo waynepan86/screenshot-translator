@@ -225,9 +225,13 @@ class CaptureWindow(QWidget):
                 self.draw_magnifier(painter, QCursor.pos() - self.combined_rect.topLeft())
             return
 
-        # Once selection starts, draw the frozen desktop snapshot.
-        painter.drawPixmap(0, 0, self.bg_pixmap)
-            
+        # Keep the selected original region transparent so the live desktop
+        # remains pixel-sharp. Painting the frozen ClearType screenshot into
+        # this layered window would soften subpixel text a second time. The
+        # frozen pixmap is still used for OCR, copy, save and translated output.
+        # Alpha 1 keeps the selected area in Windows' native hit-test region.
+        painter.fillRect(self.crop_rect, QColor(0, 0, 0, 1))
+
         # 2. Draw mask outside the crop selection
         mask_color = QColor(0, 0, 0, 100)
         # Top mask

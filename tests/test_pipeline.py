@@ -52,6 +52,26 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(image.pixelColor(150,35).alpha(),100)
         window.close()
 
+    def test_selected_original_stays_live_and_translation_is_painted(self):
+        pix=QPixmap(200,100); pix.fill(QColor('white'))
+        window=CaptureWindow(pix,QRect(0,0,200,100),Config())
+        window.crop_rect=QRect(20,20,80,40)
+        window.draw_resize_handles=lambda *args:None
+        window.draw_dimension_label=lambda *args:None
+        image=QImage(200,100,QImage.Format_ARGB32_Premultiplied)
+        image.fill(Qt.transparent); window.render(image)
+        self.assertEqual(image.pixelColor(50,35).alpha(),1)
+        self.assertEqual(image.pixelColor(150,35).alpha(),100)
+
+        translated=QPixmap(80,40); translated.fill(QColor('red'))
+        window.translated_pixmap=translated
+        window.is_translated_view=True
+        image.fill(Qt.transparent); window.render(image)
+        shown=image.pixelColor(50,35)
+        self.assertEqual(shown.alpha(),255)
+        self.assertGreater(shown.red(),240)
+        window.close()
+
     def test_tight_three_line_heading_keeps_middle_row(self):
         dummy=type('Dummy',(),{'same_script':lambda s,a,b:True})()
         paragraphs=CaptureWindow.group_lines_into_paragraphs(dummy,[
