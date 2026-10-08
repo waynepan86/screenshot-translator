@@ -10,30 +10,32 @@ def _record(text='', engine='', error='', fallback=False, cached=False, ok=True)
     return dict(text=text, engine=engine, error=error, fallback=fallback, cached=cached, ok=ok)
 
 
-def _fallback(text, target, cause):
-    out = api._google_translate(text, 'auto', target)
+def _fallback(text, target, cause, source='auto'):
+    out = api._google_translate(text, source, target)
     if out:
         return _record(out.strip(), 'Google', cause, api._engine != 'auto')
-    out = api.translate_mymemory(text, 'auto', target)
+    out = api.translate_mymemory(text, source, target)
     if out:
         return _record(out.strip(), 'MyMemory', cause, True)
     return _record(error=cause or 'Google 与 MyMemory 均未返回可用译文', ok=False)
 
 
-def _single(text, target):
+def _single(text, target, source='auto'):
     if api._engine != 'auto' and api.engine_ready(api._engine):
         api._errors.message = ''
-        out = api._ENGINE_FUNCS[api._engine](text, 'auto', target)
+        out = api._ENGINE_FUNCS[api._engine](text, source, target)
         if out:
             return _record(out.strip(), api._engine)
-        return _fallback(text, target, getattr(api._errors, 'message', '') or '首选翻译引擎失败')
-    return _fallback(text, target, '首选引擎密钥未配置' if api._engine != 'auto' else '')
+        return _fallback(text, target, getattr(api._errors, 'message', '') or '首选翻译引擎失败', source)
+    return _fallback(text, target, '首选引擎密钥未配置' if api._engine != 'auto' else '', source)
 
 
-def _deepl(texts, target, context):
+def _deepl(texts, target, context, source='auto'):
     key = api._creds['deepl']['key'].strip()
     host = 'api-free.deepl.com' if key.endswith(':fx') else 'api.deepl.com'
     payload = dict(text=texts, target_lang=api._lang('deepl', target, 'ZH'), context=context)
+    if source != 'auto':
+        payload['source_lang'] = source.split('-')[0].upper()
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     if len(body) > 128 * 1024:
         raise ValueError('单个文本块超过 DeepL 请求大小限制')
@@ -52,15 +54,15 @@ def _deepl(texts, target, context):
             raise
 
 
-def translate(texts, target, progress=None, force=False, context_text=None):
+def translate(texts, target, progress=None, force=False, context_text=None, source='auto'):
     context = (context_text if context_text is not None else '\n'.join(texts))[:6000]
     results = [None] * len(texts)
     pending = {}
     done = 0
     for i, text in enumerate(texts):
-        key = (api._engine, target, text.strip(), context if api._engine == 'deepl' else '')
+        key = (api._engine, target, text.strip(), context if api._engine == 'deepl' else '', source)
         # Keep code/URLs and numeric-only labels intact, without an API call.
-        literal = not re.search(r'[A-Za-z\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]', text) or bool(re.fullmatch(r'(?:https?://\S+|[\w.-]+[/\\][\w./\\-]+)', text.strip()))
+        literal = not any(char.isalpha() for char in text) or bool(re.fullmatch(r'(?:https?://\S+|[\w.-]+[/\\][\w./\\-]+)', text.strip()))
         with api._cache_lock:
             cached = None if force else api._cache.get(key)
         if literal:
@@ -102,18 +104,18 @@ def translate(texts, target, progress=None, force=False, context_text=None):
             batches.append(batch)
         def run_batch(batch):
             try:
-                return _deepl([k[2] for k in batch], target, context)
+                return _deepl([k[2] for k in batch], target, context, source)
             except Exception as exc:
                 cause = 'DeepL: ' + api._describe(exc)
                 with ThreadPoolExecutor(max_workers=4) as pool:
-                    return list(pool.map(lambda k: _fallback(k[2], target, cause), batch))
+                    return list(pool.map(lambda k: _fallback(k[2], target, cause, source), batch))
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {pool.submit(run_batch, b): b for b in batches}
             for future in as_completed(futures):
                 finish(futures[future], future.result())
     else:
         with ThreadPoolExecutor(max_workers=3 if api._engine == 'llm' else 6) as pool:
-            futures = {pool.submit(_single, k[2], target): k for k in keys}
+            futures = {pool.submit(_single, k[2], target, source): k for k in keys}
             for future in as_completed(futures):
                 try:
                     record = future.result()

@@ -7,10 +7,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from PySide6.QtCore import QRect
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QColor, QCursor, QFont, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from capture_window import CaptureWindow
 
@@ -28,11 +28,31 @@ class Point(ctypes.Structure):
     _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
 
 
+class DesktopFixture(QWidget):
+    """A stable, dense text surface; the real desktop may change during a test."""
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor('#edf0f4'))
+        painter.setPen(QColor('#151b25'))
+        painter.setFont(QFont('Microsoft YaHei', 12))
+        for y in range(22, self.height(), 26):
+            painter.drawText(12, y, '清晰度测试 Screenshot Translator 2.0 — AI research and safety 0123456789 ' * 8)
+
+
 def main():
     app = QApplication.instance() or QApplication([])
     screen = app.primaryScreen()
     geometry = screen.geometry()
+    fixture = DesktopFixture()
+    fixture.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+    fixture.setGeometry(geometry)
+    fixture.show()
+    fixture.raise_()
+    QCursor.setPos(geometry.topLeft())
+    QTest.qWait(300)
     pixmap = screen.grabWindow(0)
+    print(f'geometry={geometry} captured={pixmap.size()} DPR={pixmap.devicePixelRatio()}')
 
     overlay = CaptureWindow(pixmap, geometry, Config())
     overlay.draw_magnifier = lambda *_: None
@@ -54,14 +74,19 @@ def main():
     user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
     user32.GetAncestor.restype = wintypes.HWND
 
-    native_point = geometry.topLeft() + local_center
     overlay_hwnd = int(overlay.winId())
+    user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(Point)]
+    user32.ClientToScreen.restype = wintypes.BOOL
+    native_point = Point(round(local_center.x() * overlay.devicePixelRatioF()),
+                         round(local_center.y() * overlay.devicePixelRatioF()))
+    if not user32.ClientToScreen(overlay_hwnd, ctypes.byref(native_point)):
+        raise SystemExit('FAIL: could not map selected center to native screen coordinates')
 
     def assert_overlay_hit(stage):
-        hit = user32.WindowFromPoint(Point(native_point.x(), native_point.y()))
+        hit = user32.WindowFromPoint(native_point)
         hit_root = user32.GetAncestor(hit, 2)  # GA_ROOT
         print(
-            f"stage={stage} point={native_point.x()},{native_point.y()} "
+            f"stage={stage} point={native_point.x},{native_point.y} "
             f"overlay={overlay_hwnd:#x} hit={int(hit):#x} root={int(hit_root):#x}"
         )
         if int(hit_root) != overlay_hwnd:
@@ -69,7 +94,11 @@ def main():
 
     assert_overlay_hit("hover")
     overlay.hover_window = QRect()
-    overlay.crop_rect = test_rect
+    QTest.mousePress(overlay, Qt.LeftButton, pos=test_rect.topLeft())
+    QTest.mouseMove(overlay, test_rect.bottomRight())
+    QTest.mouseRelease(overlay, Qt.LeftButton, pos=test_rect.bottomRight())
+    if overlay.crop_rect != test_rect:
+        raise SystemExit(f'FAIL: mouse drag did not select the expected area: {overlay.crop_rect}')
     overlay.update()
     QTest.qWait(250)
     app.processEvents()
@@ -80,8 +109,8 @@ def main():
     composed_image = composed.toImage()
     ratio = pixmap.devicePixelRatio()
     max_delta = 0
-    for dx in range(-100, 101, 20):
-        for dy in range(-60, 61, 20):
+    for dx in range(-100, 101):
+        for dy in range(-60, 61):
             x = round((local_center.x() + dx) * ratio)
             y = round((local_center.y() + dy) * ratio)
             before = original_image.pixelColor(x, y)
@@ -94,6 +123,7 @@ def main():
             )
     print(f"selected-area max RGB delta={max_delta}")
     overlay.close()
+    fixture.close()
     app.processEvents()
     if max_delta > 1:
         raise SystemExit("FAIL: selected original area was repainted or softened")

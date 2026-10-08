@@ -33,9 +33,11 @@ class AboutDialog(QDialog):
             "<ul>"
             "<li>F1 区域自由截图 / F2 全屏截图</li>"
             "<li>本地 OCR 与后台小幅纠偏，支持 DeepL 等在线翻译服务</li>"
+            "<li>11 种主流翻译语种，支持源语言和目标语言选择</li>"
             "<li>原位译文显示，按住空格查看原图</li>"
             "<li>F3 贴图置顶，支持拖动、缩放和透明度调整</li>"
             "<li>窗口选择、常用标注及遮盖打码</li>"
+            "<li>安装版与便携版，支持旧配置自动迁移</li>"
             "</ul>"
         )
         content.setWordWrap(True)

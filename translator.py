@@ -13,6 +13,7 @@ from concurrent.futures import as_completed
 from collections import OrderedDict
 import threading
 import copy
+from languages import LANGUAGES
 
 _cache = OrderedDict()
 _cache_lock = threading.Lock()
@@ -70,12 +71,16 @@ ENGINE_FIELDS = {
 
 # Our internal codes ("zh-CN"/"en") mapped to what each provider expects.
 _LANG_MAPS = {
-    "azure": {"zh-CN": "zh-Hans", "en": "en", "ja": "ja", "ko": "ko"},
-    "baidu": {"zh-CN": "zh", "en": "en", "ja": "jp", "ko": "kor"},
-    "youdao": {"zh-CN": "zh-CHS", "en": "en", "ja": "ja", "ko": "ko"},
-    "deepl": {"zh-CN": "ZH", "en": "EN-US", "ja": "JA", "ko": "KO"},
-    "llm": {"zh-CN": "Simplified Chinese", "en": "English", "ja": "Japanese", "ko": "Korean"},
+    "azure": {code: code for code, *_ in LANGUAGES},
+    "baidu": {code: code for code, *_ in LANGUAGES},
+    "youdao": {code: code for code, *_ in LANGUAGES},
+    "deepl": {code: code.upper() for code, *_ in LANGUAGES},
+    "llm": {code: name for code, _, name, _ in LANGUAGES},
 }
+_LANG_MAPS["azure"].update({"zh-CN": "zh-Hans", "zh-TW": "zh-Hant"})
+_LANG_MAPS["baidu"].update({"zh-CN": "zh", "zh-TW": "cht", "ja": "jp", "ko": "kor", "fr": "fra", "es": "spa"})
+_LANG_MAPS["youdao"].update({"zh-CN": "zh-CHS", "zh-TW": "zh-CHT"})
+_LANG_MAPS["deepl"].update({"zh-CN": "ZH", "zh-TW": "ZH-HANT", "en": "EN-US", "pt": "PT-BR"})
 
 
 def configure(engine, api_creds):
@@ -113,7 +118,7 @@ def _lang(engine, code, default=None):
     table = _LANG_MAPS.get(engine, {})
     if code in table:
         return table[code]
-    return code if default is None else default
+    raise ValueError(f"不支持的翻译语言：{code}")
 
 
 def _describe(exc):
@@ -169,6 +174,8 @@ def detect_lang(text):
         return "ko"
     if re.search(r'[\u4e00-\u9fff]', text):
         return "zh-CN"
+    if re.search(r'[\u0400-\u04ff]', text):
+        return "ru"
     return "en"
 
 

@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+from languages import ocr_tag
 
 _engine_lock = threading.RLock()
 
@@ -231,11 +232,12 @@ def merge_line_fragments(lines):
 
 # Unified entry: RapidOCR first, Windows OCR as fallback
 def run_ocr_sync(image_path, language_code=None, scale_factor=1.0, review=True, progress=None):
-    if is_rapidocr_available():
+    language_code = ocr_tag(language_code)
+    if language_code in (None, 'en-US', 'zh-CN') and is_rapidocr_available():
         try:
             result = run_ocr_rapid(image_path, scale_factor)
             if result["lines"]:
-                if review:
+                if review and language_code in (None, 'en-US'):
                     from ocr_review import review_result
                     try:
                         result = review_result(result, image_path, scale_factor, run_ocr_rapid, progress)
@@ -252,6 +254,36 @@ def run_ocr_sync(image_path, language_code=None, scale_factor=1.0, review=True, 
     finally:
         loop.close()
 
+
+def windows_ocr_languages():
+    try:
+        from winrt.windows.media.ocr import OcrEngine
+        return [language.language_tag for language in OcrEngine.available_recognizer_languages]
+    except (ImportError, OSError, RuntimeError):
+        return []
+
+
+def windows_language_supported(code):
+    try:
+        from winrt.windows.media.ocr import OcrEngine
+        from winrt.windows.globalization import Language
+        return OcrEngine.is_language_supported(Language(ocr_tag(code)))
+    except (ImportError, OSError, RuntimeError):
+        return False
+
+
+def choose_windows_engine(engine_type, language_type, language_code):
+    if not language_code:
+        engine = engine_type.try_create_from_user_profile_languages()
+    else:
+        language = language_type(language_code)
+        if not engine_type.is_language_supported(language):
+            raise RuntimeError(f"Windows 未安装 {language_code} OCR 语言包，请在 Windows 设置的语言选项中安装文字识别组件。")
+        engine = engine_type.try_create_from_language(language)
+    if engine is None:
+        raise RuntimeError("Windows OCR 无法初始化，请检查已安装的 OCR 语言包。")
+    return engine
+
 async def ocr_image_async(image_path, language_code=None, scale_factor=1.0):
     from winrt.windows.storage import StorageFile
     from winrt.windows.graphics.imaging import BitmapDecoder
@@ -267,18 +299,7 @@ async def ocr_image_async(image_path, language_code=None, scale_factor=1.0):
     decoder = await BitmapDecoder.create_async(stream)
     software_bitmap = await decoder.get_software_bitmap_async()
 
-    # Initialize Default OCR Engine (System profile, e.g. zh-CN)
-    if language_code:
-        try:
-            lang = Language(language_code)
-            engine = OcrEngine.try_create_from_language(lang)
-        except Exception:
-            engine = OcrEngine.try_create_from_user_profile_languages()
-    else:
-        engine = OcrEngine.try_create_from_user_profile_languages()
-
-    if not engine:
-        raise RuntimeError("Failed to initialize Windows OCR Engine.")
+    engine = choose_windows_engine(OcrEngine, Language, language_code)
 
     result = await engine.recognize_async(software_bitmap)
     

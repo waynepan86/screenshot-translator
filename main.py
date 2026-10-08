@@ -11,7 +11,7 @@ import ctypes
 import threading
 from ctypes import wintypes
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QDialog
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QDialog, QMessageBox
 from PySide6.QtCore import Qt, QPoint, QRect, QTimer
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, QPainter, QKeySequence, QBrush, QColor
 
@@ -22,7 +22,7 @@ from about_dialog import AboutDialog
 import translator
 import ocr
 
-APP_VERSION = "1.10.7"
+from app_version import APP_VERSION
 
 # Native Win32 Hotkey structures
 WM_HOTKEY = 0x0312
@@ -66,6 +66,8 @@ class ScreenshotApp:
         
         # Load Config
         self.config = ConfigManager()
+        if self.config.get('auto_start'):
+            self.config.update_startup_registry(True)
         translator.configure(
             self.config.get("trans_engine"), self.config.get("trans_api"))
         
@@ -370,6 +372,10 @@ if __name__ == "__main__":
     os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     
-    app_instance = ScreenshotApp()
+    try:
+        app_instance = ScreenshotApp()
+    except (OSError, RuntimeError) as exc:
+        QMessageBox.critical(None, "启动失败", str(exc))
+        sys.exit(1)
     sys.exit(app_instance.run())
 

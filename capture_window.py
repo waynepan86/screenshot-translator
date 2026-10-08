@@ -96,15 +96,16 @@ class OCRThread(QThread):
     finished = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, temp_img_path, scale_factor=1.0, review=True):
+    def __init__(self, temp_img_path, scale_factor=1.0, review=True, language=None):
         super().__init__()
         self.temp_img_path = temp_img_path
         self.review = review
+        self.language = language
         self.scale_factor = scale_factor
 
     def run(self):
         try:
-            result = ocr.run_ocr_sync(self.temp_img_path, scale_factor=self.scale_factor, review=self.review, progress=self.progress.emit)
+            result = ocr.run_ocr_sync(self.temp_img_path, language_code=self.language, scale_factor=self.scale_factor, review=self.review, progress=self.progress.emit)
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -115,16 +116,17 @@ class TranslationThread(QThread):
     finished = Signal(list)
     error = Signal(str)
 
-    def __init__(self, texts, to_lang=None, force=False, context=None):
+    def __init__(self, texts, to_lang=None, force=False, context=None, source='auto'):
         super().__init__()
         self.texts = texts
         self.force = force
         self.context = context
         self.to_lang = to_lang
+        self.source = source
 
     def run(self):
         try:
-            result = translation_service.translate(self.texts, self.to_lang, self.progress.emit, self.force, self.context)
+            result = translation_service.translate(self.texts, self.to_lang, self.progress.emit, self.force, self.context, self.source)
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
@@ -908,7 +910,11 @@ class CaptureWindow(QWidget):
     def prepare_ocr_image(self):
         # Grabs the crop area, preprocesses it for the active OCR engine and
         # returns (path, scale_factor used).
-        fd, temp_raw_path = tempfile.mkstemp(suffix=".png", prefix="snip_raw_")
+        paths = getattr(self.config, 'paths', None)
+        directory = paths.cache_dir if paths else None
+        if directory is not None:
+            directory.mkdir(parents=True, exist_ok=True)
+        fd, temp_raw_path = tempfile.mkstemp(suffix=".png", prefix="snip_raw_", dir=directory)
         os.close(fd)
         crop_pixmap = self.bg_pixmap.copy(self.crop_rect)
         painter = QPainter(crop_pixmap)
@@ -919,7 +925,7 @@ class CaptureWindow(QWidget):
         painter.end()
         crop_pixmap.save(temp_raw_path, "PNG")
         
-        fd, temp_ocr_path = tempfile.mkstemp(suffix=".png", prefix="snip_ocr_")
+        fd, temp_ocr_path = tempfile.mkstemp(suffix=".png", prefix="snip_ocr_", dir=directory)
         os.close(fd)
         
         from PIL import Image, ImageEnhance
@@ -1038,7 +1044,7 @@ class CaptureWindow(QWidget):
         self.temp_ocr_path, scale_factor = self.prepare_ocr_image()
         
         # Launch background thread with scale_factor
-        self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=True)
+        self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=True, language=self.config.get('trans_source'))
         self.ocr_thread.progress.connect(self.on_stage_progress)
         self.ocr_thread.finished.connect(self.on_ocr_finished)
         self.ocr_thread.error.connect(self.on_ocr_error)
@@ -1138,7 +1144,7 @@ class CaptureWindow(QWidget):
                     # Prepare the upscaled image for translation OCR
                     self.temp_ocr_path, scale_factor = self.prepare_ocr_image()
                     
-                    self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=True)
+                    self.ocr_thread = OCRThread(self.temp_ocr_path, scale_factor=scale_factor, review=True, language=self.config.get('trans_source'))
                     self.ocr_thread.progress.connect(self.on_stage_progress)
                     self.ocr_thread.finished.connect(self.on_ocr_finished_for_translation)
                     self.ocr_thread.error.connect(self.on_translate_error_recovery)
@@ -1182,9 +1188,10 @@ class CaptureWindow(QWidget):
         self.loading_msg = '正在翻译…'
         self.pending_indices = list(range(len(self.blocks))) if indices is None else indices
         if indices is None or not hasattr(self, 'trans_target'):
-            self.trans_target = translator.auto_target_lang('\n'.join(b['source'] for b in self.blocks))
+            chosen = self.config.get('trans_target') or 'auto'
+            self.trans_target = translator.auto_target_lang('\n'.join(b['source'] for b in self.blocks)) if chosen == 'auto' else chosen
         texts = [self.blocks[i]['source'] for i in self.pending_indices]
-        self.trans_thread = TranslationThread(texts, self.trans_target, force, '\n'.join(b['source'] for b in self.blocks))
+        self.trans_thread = TranslationThread(texts, self.trans_target, force, '\n'.join(b['source'] for b in self.blocks), self.config.get('trans_source') or 'auto')
         self.trans_thread.progress.connect(self.on_translation_progress)
         self.trans_thread.finished.connect(self.on_translation_finished)
         self.trans_thread.error.connect(self.on_translate_error_recovery)
@@ -1515,12 +1522,17 @@ class CaptureWindow(QWidget):
         total = len(re.sub(r'\s', '', translated))
         if total == 0:
             return False
-        if self.trans_target == "zh-CN":
+        if self.trans_target in ("zh-CN", "zh-TW"):
             # A "Chinese" result with almost no Chinese means the engine
             # echoed the (noisy) source text back
             return cjk >= 1 and cjk / total >= 0.10
-        # English target: reject results still dominated by CJK characters
-        return cjk / total <= 0.5
+        if self.trans_target == 'ja':
+            return bool(re.search(r'[\u3040-\u30ff\u3400-\u9fff]', translated))
+        if self.trans_target == 'ko':
+            return bool(re.search(r'[\uac00-\ud7af]', translated))
+        if self.trans_target == 'ru':
+            return bool(re.search(r'[\u0400-\u04ff]', translated))
+        return bool(re.search(r'[A-Za-z\u00c0-\u024f]', translated)) and cjk / total <= 0.5
 
     def sample_edge_colors(self, image, rect):
         # Samples background just outside the rect perimeter, split into

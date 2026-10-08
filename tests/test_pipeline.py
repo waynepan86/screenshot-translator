@@ -447,7 +447,8 @@ class PipelineTests(unittest.TestCase):
         from PySide6.QtTest import QSignalSpy
         from PySide6.QtWidgets import QLabel, QPushButton
         from about_dialog import AboutDialog, HELP_URL, PROJECT_URL
-        about=AboutDialog('1.10.7')
+        from app_version import APP_VERSION
+        about=AboutDialog(APP_VERSION)
         links=about.findChild(QLabel,'resourceLinks')
         author=about.findChild(QLabel,'authorCredit')
         self.assertIn(PROJECT_URL,links.text())

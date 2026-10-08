@@ -11,4 +11,5 @@ backups/
 review_artifacts/
 *.log
 temp_screenshot*
-
+data/
+portable.flag

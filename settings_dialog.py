@@ -4,20 +4,23 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox,
     QFileDialog, QKeySequenceEdit, QFormLayout, QFrame, QComboBox,
     QLineEdit, QGroupBox, QMessageBox,
+    QTabWidget, QWidget, QScrollArea,
 )
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QKeySequence
+from PySide6.QtCore import Qt, QThread, Signal, QUrl
+from PySide6.QtGui import QKeySequence, QDesktopServices
 
 import translator
+import ocr
+from languages import LANGUAGES, ocr_tag
 
 # Where to get a key, per engine. Shown under the credential rows.
 ENGINE_HINTS = {
     "auto": "无需密钥。谷歌不可达时自动切换到 MyMemory。",
-    "azure": "Azure 门户创建“翻译器”资源，免费层 F0 每月 200 万字符。",
+    "azure": "在 Azure 创建翻译器资源，填写订阅密钥和区域；额度以账户为准。",
     "llm": "填服务商的 OpenAI 兼容地址，注意要带 /v1 之类的版本段。",
-    "baidu": "百度翻译开放平台 → 开发者信息，标准版每月 5 万字符免费。",
+    "baidu": "百度翻译开放平台 → 开发者信息，填写 APP ID 与密钥。",
     "youdao": "有道智云 → 自然语言翻译 → 创建应用，取应用 ID 与密钥。",
-    "deepl": "DeepL API Free 每月 50 万字符，国内访问可能需要代理。",
+    "deepl": "填写 DeepL API 的 Auth Key，免费版密钥以 :fx 结尾；需要网络连接。",
 }
 
 
@@ -45,7 +48,7 @@ class SettingsDialog(QDialog):
         self.config = config_manager
         self.setWindowTitle("截图工具 - 设置")
         self.setWindowFlags(Qt.Dialog | Qt.WindowCloseButtonHint)
-        self.resize(430, 540)
+        self.resize(540, min(640, self.screen().availableGeometry().height() - 80))
 
         # Working copy of the credentials: edits are kept here while the user
         # switches between engines, and only written to disk on save.
@@ -151,6 +154,22 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(12)
+        tabs = QTabWidget(self)
+        tabs.setStyleSheet("QTabWidget::pane {border:1px solid #3C4043;} QTabBar::tab {background:#2D2E30;color:#E8EAED;padding:8px 20px;} QTabBar::tab:selected {background:#3C4043;}")
+        layout.addWidget(tabs, 1)
+        general = QWidget()
+        general_box = QVBoxLayout(general)
+        general_box.setContentsMargins(12, 12, 12, 12)
+        translation = QWidget()
+        translation_box = QVBoxLayout(translation)
+        translation_box.setContentsMargins(12, 12, 12, 12)
+        for name, page in (("常规", general), ("翻译", translation)):
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.NoFrame)
+            scroll.setStyleSheet("QScrollArea, QScrollArea QWidget {background:#202124;}")
+            scroll.setWidget(page)
+            tabs.addTab(scroll, name)
 
         # Form layout
         form = QFormLayout()
@@ -187,8 +206,23 @@ class SettingsDialog(QDialog):
         form.addRow("", self.chk_startup)
 
 
-        layout.addLayout(form)
-        layout.addWidget(self.build_engine_group())
+        general_box.addLayout(form)
+        paths = getattr(self.config, 'paths', None)
+        if paths:
+            mode = "便携版（数据随程序保存）" if paths.portable else "标准版（数据保存在用户目录）"
+            location = QLabel(f"{mode}\n数据目录：{paths.data_dir}")
+            location.setWordWrap(True)
+            location.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            general_box.addWidget(location)
+            open_data = QPushButton("打开数据目录")
+            open_data.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(paths.data_dir))))
+            general_box.addWidget(open_data, 0, Qt.AlignLeft)
+            import_old = QPushButton("导入旧版配置…")
+            import_old.clicked.connect(self.import_legacy_config)
+            general_box.addWidget(import_old, 0, Qt.AlignLeft)
+        general_box.addStretch()
+        translation_box.addWidget(self.build_engine_group())
+        translation_box.addStretch()
 
         # Divider Line
         line = QFrame(self)
@@ -233,7 +267,25 @@ class SettingsDialog(QDialog):
         self.engine_combo.setCurrentIndex(index if index >= 0 else 0)
         self.engine_combo.currentIndexChanged.connect(self.on_engine_changed)
         picker.addRow("使用引擎：", self.engine_combo)
+        self.source_combo = QComboBox(self)
+        self.source_combo.addItem("自动识别（主要适用于中英）", "auto")
+        self.target_combo = QComboBox(self)
+        self.target_combo.addItem("自动（保留旧版中英互译）", "auto")
+        for code, name, *_ in LANGUAGES:
+            self.source_combo.addItem(name, code)
+            self.target_combo.addItem(name, code)
+        for combo, key, default in ((self.source_combo, 'trans_source', 'auto'), (self.target_combo, 'trans_target', 'zh-CN')):
+            index = combo.findData(self.config.get(key) or default)
+            combo.setCurrentIndex(max(0, index))
+        picker.addRow("截图语言：", self.source_combo)
+        picker.addRow("翻译成：", self.target_combo)
         box.addLayout(picker)
+        self.language_note = QLabel()
+        self.language_note.setWordWrap(True)
+        self.language_note.setStyleSheet("color:#9AA0A6;font-size:9pt;")
+        box.addWidget(self.language_note)
+        self.source_combo.currentIndexChanged.connect(self.update_language_note)
+        self.update_language_note()
 
         self.cred_form = QFormLayout()
         self.cred_form.setLabelAlignment(Qt.AlignRight)
@@ -254,6 +306,28 @@ class SettingsDialog(QDialog):
 
         self.build_cred_rows()
         return group
+
+    def update_language_note(self):
+        source = self.source_combo.currentData()
+        if source in ('auto', 'en', 'zh-CN'):
+            self.language_note.setText("中英截图使用内置 OCR。其他截图语言需 Windows 对应 OCR 语言包；目标语种不需要安装语言包。")
+        else:
+            tag = ocr_tag(source)
+            installed = ocr.windows_language_supported(source)
+            self.language_note.setText(f"{tag}：" + ("已检测到 Windows OCR 语言包。" if installed else "需在 Windows 设置中安装对应 OCR 语言包；未安装时会提示，不会改用其他语言识别。"))
+
+    def import_legacy_config(self):
+        filename, _ = QFileDialog.getOpenFileName(self, "选择旧版 config.json", "", "JSON 配置 (*.json)")
+        if not filename:
+            return
+        try:
+            self.config.import_legacy(filename)
+        except (OSError, RuntimeError):
+            QMessageBox.warning(self, "导入失败", "无法导入所选配置。请检查文件格式与数据目录权限，原文件及现有配置已保留。")
+            return
+        # Persisted import takes effect through ScreenshotApp.on_settings_closed.
+        QMessageBox.information(self, "导入完成", "旧版配置已导入。重新打开设置可查看；旧文件保持不变。")
+        self.accept()
 
     def current_engine(self):
         return self.engine_combo.currentData() or "auto"
@@ -337,12 +411,15 @@ class SettingsDialog(QDialog):
                 self, "密钥不完整",
                 "该引擎的密钥没有填全，翻译时会直接回退到谷歌 / MyMemory。")
 
-        # Save configuration settings
-        self.config.set("hotkey_region", region_seq)
-        self.config.set("hotkey_fullscreen", full_seq)
-        self.config.set("save_dir", self.current_save_dir)
-        self.config.set("auto_start", self.chk_startup.isChecked())
-        self.config.set("trans_engine", engine)
-        self.config.set("trans_api", self.api_values)
+        try:
+            self.config.update(dict(hotkey_region=region_seq, hotkey_fullscreen=full_seq,
+                                    save_dir=self.current_save_dir, auto_start=self.chk_startup.isChecked(),
+                                    trans_engine=engine, trans_api=self.api_values,
+                                    trans_source=self.source_combo.currentData(),
+                                    trans_target=self.target_combo.currentData()))
+        except OSError:
+            translator.configure(self.config.get('trans_engine'), self.config.get('trans_api'))
+            QMessageBox.warning(self, "保存失败", "无法写入配置，请检查数据目录的写入权限。原有配置已保留。")
+            return
 
         self.accept()
