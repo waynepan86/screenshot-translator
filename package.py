@@ -38,8 +38,7 @@ def create_portable_archive(bundle, portable, archive, root):
             relative = path.relative_to(bundle)
             if path.is_file() and relative.parts[0] != 'data' and path.name not in ('config.json', 'portable.flag') and path.suffix != '.log' and relative not in (Path('README.md'), Path('USER_GUIDE.md')):
                 output.write(path, str(Path(portable.name) / relative))
-        for document in ('README.md', 'USER_GUIDE.md'):
-            output.write(root / document, str(Path(portable.name) / document))
+        output.write(root / 'README.md', str(Path(portable.name) / 'README.md'))
         output.writestr(f'{portable.name}/portable.flag', 'Store application data in ./data.\n')
         output.writestr(f'{portable.name}/data/', '')
 
@@ -58,8 +57,10 @@ def run():
     if not args.skip_build:
         subprocess.run([sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm', str(root / '截图工具.spec')], check=True)
     bundle = root / 'dist' / 'ScreenshotTranslator'
-    for document in ('README.md', 'USER_GUIDE.md'):
-        shutil.copy2(root / document, bundle / document)
+    shutil.copy2(root / 'README.md', bundle / 'README.md')
+    # The offline guide lives in _internal for the About dialog. Only README
+    # is exposed next to the executable, including when reusing old builds.
+    (bundle / 'USER_GUIDE.md').unlink(missing_ok=True)
     release = root / 'dist' / f'v{APP_VERSION}'
     release.mkdir(parents=True, exist_ok=True)
     smoke(bundle / 'ScreenshotTranslator.exe', release / 'standard-self-test.json')
@@ -67,8 +68,8 @@ def run():
     shutil.copytree(bundle, portable, dirs_exist_ok=True)
     (portable / 'portable.flag').write_text('Keep this file to store all application data in ./data.\n', encoding='utf-8')
     (portable / 'data').mkdir(exist_ok=True)
-    for document in ('README.md', 'USER_GUIDE.md'):
-        shutil.copy2(root / document, portable / document)
+    shutil.copy2(root / 'README.md', portable / 'README.md')
+    (portable / 'USER_GUIDE.md').unlink(missing_ok=True)
     result = smoke(portable / 'ScreenshotTranslator.exe', release / 'portable-self-test.json')
     if not result.get('portable'):
         raise RuntimeError('Portable marker was not detected')

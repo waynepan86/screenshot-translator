@@ -130,6 +130,9 @@ class VersionTwoTests(unittest.TestCase):
         bundle = self.root / 'bundle'
         bundle.mkdir()
         (bundle / 'app.exe').write_bytes(b'fixture')
+        (bundle / 'USER_GUIDE.md').write_text('stale root guide')
+        (bundle / '_internal').mkdir()
+        (bundle / '_internal' / 'USER_GUIDE.md').write_text('offline application help')
         (bundle / 'config.json').write_text('fixture-secret')
         (bundle / 'data').mkdir()
         (bundle / 'data' / 'config.json').write_text('fixture-secret')
@@ -144,6 +147,9 @@ class VersionTwoTests(unittest.TestCase):
             names = output.namelist()
             self.assertIn('portable/app.exe', names)
             self.assertIn('portable/portable.flag', names)
+            self.assertIn('portable/README.md', names)
+            self.assertNotIn('portable/USER_GUIDE.md', names)
+            self.assertIn('portable/_internal/USER_GUIDE.md', names)
             self.assertFalse(any('config.json' in name or 'private.json' in name for name in names))
 
     def test_deepl_traditional_target_explicit_source_and_source_sensitive_cache(self):
