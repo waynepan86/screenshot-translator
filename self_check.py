@@ -10,18 +10,23 @@ def run(output):
         import sys
         import numpy as np
         import cv2
-        from PySide6.QtWidgets import QApplication
+        from PySide6.QtWidgets import QApplication, QLabel
         from PySide6.QtGui import QImage, QFont, QPainter, QColor
         from PySide6.QtCore import QRect
         from spellchecker import SpellChecker
         from config import DEFAULT_CONFIG
         from help_dialog import HelpDialog
+        from about_dialog import AboutDialog
         from review_panel import OCRPanel
         import ocr
         app = QApplication.instance() or QApplication([])
         cfg=type('Config',(),{'get':lambda self,key:DEFAULT_CONFIG.get(key)})()
-        help=HelpDialog(cfg,'1.10.6')
+        help=HelpDialog(cfg,'1.10.7')
         assert '小幅纠偏' in help.browser.toPlainText()
+        about=AboutDialog('1.10.7')
+        assert 'GitHub 项目' in about.resource_links.text()
+        assert '使用说明' in about.resource_links.text()
+        assert about.findChild(QLabel, 'authorCredit').text() == 'Created by Wayne'
         from background_repair import smooth_background
         assert smooth_background(np.full((20,40,3),70,dtype=np.uint8)) is not None
         panel=OCRPanel()
@@ -42,8 +47,8 @@ def run(output):
         pin.show(); app.processEvents(); assert pin.isVisible(); pin.close()
         from window_selection import snapshot_windows
         bounds = snapshot_windows(QGuiApplication.screens())
-        report=dict(ok=True,help=True,spelling=True,pin=True,window_snapshot_count=len(bounds),ocr_text=result['text'],opencv=cv2.__version__)
-        panel.close(); help.close()
+        report=dict(ok=True,help=True,about=True,spelling=True,pin=True,window_snapshot_count=len(bounds),ocr_text=result['text'],opencv=cv2.__version__)
+        panel.close(); help.close(); about.close()
     except Exception:
         report=dict(ok=False,error=traceback.format_exc())
     Path(output).write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')

@@ -11,17 +11,18 @@ import ctypes
 import threading
 from ctypes import wintypes
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox, QWidget, QDialog
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QWidget, QDialog
 from PySide6.QtCore import Qt, QPoint, QRect, QTimer
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, QPainter, QKeySequence, QBrush, QColor
 
 from config import ConfigManager
 from capture_window import CaptureWindow
 from settings_dialog import SettingsDialog
+from about_dialog import AboutDialog
 import translator
 import ocr
 
-APP_VERSION = "1.10.6"
+APP_VERSION = "1.10.7"
 
 # Native Win32 Hotkey structures
 WM_HOTKEY = 0x0312
@@ -72,6 +73,7 @@ class ScreenshotApp:
         self.active_capture_window = None
         self.settings_dialog = None
         self.help_dialog = None
+        self.about_dialog = None
         
         # Set up hidden hotkey listener window
         self.listener_widget = HotkeyListenerWidget(self.on_hotkey_triggered)
@@ -122,7 +124,12 @@ class ScreenshotApp:
         self.tray_icon.setIcon(icon)
         self.tray_icon.setToolTip("轻量级截图工具")
 
-        # Context Menu
+        menu = self.build_tray_menu()
+        self.tray_icon.setContextMenu(menu)
+        self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.show()
+
+    def build_tray_menu(self):
         menu = QMenu()
         
         act_capture = QAction("区域截图 (F1)", menu)
@@ -136,8 +143,6 @@ class ScreenshotApp:
         
         act_about = QAction("关于", menu)
         act_about.triggered.connect(self.show_about)
-        act_help = QAction("使用说明", menu)
-        act_help.triggered.connect(self.show_help)
         
         act_exit = QAction("退出", menu)
         act_exit.triggered.connect(self.quit_app)
@@ -146,14 +151,10 @@ class ScreenshotApp:
         menu.addAction(act_full)
         menu.addSeparator()
         menu.addAction(act_settings)
-        menu.addAction(act_help)
         menu.addAction(act_about)
         menu.addSeparator()
         menu.addAction(act_exit)
-
-        self.tray_icon.setContextMenu(menu)
-        self.tray_icon.activated.connect(self.on_tray_activated)
-        self.tray_icon.show()
+        return menu
 
     def on_tray_activated(self, reason):
         if reason in [QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick]:
@@ -338,23 +339,12 @@ class ScreenshotApp:
         self.help_dialog.activateWindow()
 
     def show_about(self):
-        QMessageBox.about(
-            None,
-            "关于截图工具 · Screenshot Translator",
-            f"<h3>截图工具 · Screenshot Translator</h3><p>版本 {APP_VERSION}</p>"
-            "<p>一款 Windows 截图翻译工具：框选屏幕，识别并翻译文字，将译文显示在原文位置，方便阅读外文网页、软件界面和文档。</p>"
-            "<b>主要功能：</b>"
-            "<ul>"
-            "<li>F1 区域自由截图 / F2 全屏截图</li>"
-            "<li>本地 OCR 与后台小幅纠偏，支持 DeepL 等在线翻译服务</li>"
-            "<li>原位译文显示，按住空格查看原图；放不下的译文可从提取文字入口查看</li>"
-            "<li>F3 贴图置顶，支持拖动、缩放和透明度调整</li>"
-            "<li>窗口选择、画笔、矩形、箭头、文字及遮盖打码</li>"
-            "<li>复制与保存截图，自定义截图快捷键和开机启动</li>"
-            "</ul>"
-            "<p>托盘右键 → 使用说明，可查看完整操作和配置方法。</p>"
-            "<p><a href='https://github.com/waynepan86/screenshot-translator'>GitHub 项目</a> · Powered by Wayne</p>"
-        )
+        if self.about_dialog is None:
+            self.about_dialog = AboutDialog(APP_VERSION)
+            self.about_dialog.help_requested.connect(self.show_help)
+        self.about_dialog.show()
+        self.about_dialog.raise_()
+        self.about_dialog.activateWindow()
 
     def quit_app(self):
         self.unregister_all_hotkeys()

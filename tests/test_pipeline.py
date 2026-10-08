@@ -443,6 +443,43 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('Ctrl+F1',help.browser.toPlainText())
         help.show(); app.processEvents(); help.grab().save('review_artifacts/help.png'); help.close()
 
+    def test_about_integrates_help_and_author_credit(self):
+        from PySide6.QtTest import QSignalSpy
+        from PySide6.QtWidgets import QLabel, QPushButton
+        from about_dialog import AboutDialog, HELP_URL, PROJECT_URL
+        about=AboutDialog('1.10.7')
+        links=about.findChild(QLabel,'resourceLinks')
+        author=about.findChild(QLabel,'authorCredit')
+        self.assertIn(PROJECT_URL,links.text())
+        self.assertIn('使用说明',links.text())
+        self.assertEqual(author.text(),'Created by Wayne')
+        self.assertEqual(about.findChild(QPushButton,'closeButton').text(),'关闭')
+        spy=QSignalSpy(about.help_requested)
+        from main import ScreenshotApp
+        controller=ScreenshotApp.__new__(ScreenshotApp)
+        controller.config=Config()
+        controller.help_dialog=None
+        about.help_requested.connect(controller.show_help)
+        links.linkActivated.emit(HELP_URL)
+        self.assertEqual(spy.count(),1)
+        self.assertTrue(controller.help_dialog.isVisible())
+        self.assertIn('Ctrl+F1',controller.help_dialog.browser.toPlainText())
+        with patch('about_dialog.QDesktopServices.openUrl') as open_url:
+            links.linkActivated.emit(PROJECT_URL)
+            self.assertEqual(open_url.call_args.args[0].toString(),PROJECT_URL)
+        controller.help_dialog.close()
+        about.show(); app.processEvents(); about.grab().save('review_artifacts/about.png'); about.close()
+
+    def test_tray_menu_keeps_help_inside_about(self):
+        from main import ScreenshotApp
+        controller=ScreenshotApp.__new__(ScreenshotApp)
+        menu=controller.build_tray_menu()
+        labels=[action.text() for action in menu.actions() if not action.isSeparator()]
+        self.assertIn('设置...',labels)
+        self.assertIn('关于',labels)
+        self.assertNotIn('使用说明',labels)
+        menu.close()
+
     def test_render_overflow_retains_original_pixels(self):
         pix=QPixmap(300,120); pix.fill(QColor('white'))
         window=CaptureWindow(pix,QRect(0,0,300,120),Config())
